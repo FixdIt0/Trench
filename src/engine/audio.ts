@@ -22,6 +22,17 @@ const SFX: Record<string, { src: string; vol: number; pool: number }> = {
 
 const pools: Record<string, HTMLAudioElement[]> = {};
 let loaded = false;
+let masterVol = 0.7;
+
+export function setMasterVolume(v: number) {
+  masterVol = v;
+  for (const [key, pool] of Object.entries(pools)) {
+    const base = SFX[key]?.vol ?? 0.5;
+    for (const a of pool) a.volume = base * masterVol;
+  }
+}
+
+export function getMasterVolume() { return masterVol; }
 
 export function preloadAudio() {
   if (loaded) return;
@@ -30,7 +41,7 @@ export function preloadAudio() {
     pools[key] = [];
     for (let i = 0; i < def.pool; i++) {
       const a = new Audio(def.src);
-      a.volume = def.vol;
+      a.volume = def.vol * masterVol;
       a.preload = "auto";
       pools[key].push(a);
     }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, smartDrop, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
 import { revealAround, TILE, getTile, TileType } from "../engine/world";
-import { preloadAudio, startAmbient, play as playSfx } from "../engine/audio";
+import { preloadAudio, startAmbient, play as playSfx, setMasterVolume, getMasterVolume } from "../engine/audio";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
 
@@ -132,6 +132,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   const [lbSort, setLbSort] = useState<"points" | "kills">("points");
   const [hudAnim, setHudAnim] = useState(0);
   const [activeSlot, setActiveSlot] = useState(0);
+  const [volume, setVolume] = useState(getMasterVolume);
   const tickRef = useRef(0);
   const { otherPlayers, allPlayers, killFeed, sendMove, sendAttack } = useMultiplayer(walletAddr);
   const otherPlayersRef = useRef<PlayerState[]>([]);
@@ -402,18 +403,38 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         </div>
       )}
 
-      {/* Shop button */}
-      <button
-        onClick={() => { setShowShop(v => !v); setShowInv(false); }}
-        style={{
-          position: "absolute", bottom: 50, right: 16, padding: "8px 16px",
-          background: showShop ? "#c8a84e" : "rgba(200,168,78,0.15)", color: showShop ? "#0d0d18" : "#c8a84e",
-          border: "1px solid #c8a84e", borderRadius: 8, fontFamily: "monospace", fontSize: 13,
-          fontWeight: 700, cursor: "pointer", letterSpacing: 1,
-        }}
-      >
-        ⛏️ SHOP
-      </button>
+      {/* Shop button — flashes when you can afford an upgrade */}
+      {(() => {
+        const canBuy = (Object.keys(UPGRADE_DEFS) as (keyof Upgrades)[]).some(k => {
+          const next = upgrades[k] + 1;
+          return next < UPGRADE_DEFS[k].tiers.length && balance >= UPGRADE_DEFS[k].tiers[next].cost;
+        });
+        return (
+          <button
+            onClick={() => { setShowShop(v => !v); setShowInv(false); }}
+            style={{
+              position: "absolute", bottom: 50, right: 16, padding: "8px 16px",
+              background: showShop ? "#c8a84e" : canBuy ? undefined : "rgba(200,168,78,0.15)",
+              color: showShop ? "#0d0d18" : "#c8a84e",
+              border: "1px solid #c8a84e", borderRadius: 8, fontFamily: "monospace", fontSize: 13,
+              fontWeight: 700, cursor: "pointer", letterSpacing: 1,
+              animation: canBuy && !showShop ? "shopPulse 1.2s ease-in-out infinite" : "none",
+            }}
+          >
+            ⛏️ SHOP {canBuy && !showShop && "✦"}
+          </button>
+        );
+      })()}
+      <style>{`@keyframes shopPulse { 0%,100% { background: rgba(200,168,78,0.15); box-shadow: none; } 50% { background: rgba(200,168,78,0.35); box-shadow: 0 0 12px rgba(200,168,78,0.4); } }`}</style>
+
+      {/* Volume slider */}
+      <div style={{ position: "absolute", bottom: 16, right: 16, display: "flex", alignItems: "center", gap: 6, fontFamily: "monospace", fontSize: 10, color: "#555" }}>
+        <span>🔈</span>
+        <input type="range" min="0" max="100" value={volume * 100}
+          onChange={e => { const v = parseInt(e.target.value) / 100; setVolume(v); setMasterVolume(v); }}
+          style={{ width: 60, accentColor: "#c8a84e", cursor: "pointer" }}
+        />
+      </div>
 
       {/* Hotbar */}
       <div style={{
