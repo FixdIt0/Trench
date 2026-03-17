@@ -18,6 +18,7 @@ function createParticles(): DustParticle[] {
 
 export default function Landing({ onEnter }: { onEnter: () => void }) {
   const [entering, setEntering] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [particles] = useState(createParticles);
   const [frame, setFrame] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -122,41 +123,26 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         padding: "0 24px",
       }}>
-        {/* Pickaxe icon */}
-        <div style={{ fontSize: 48, marginBottom: 16, filter: "drop-shadow(0 0 20px rgba(200,168,78,0.4))" }}>⛏️</div>
-
-        {/* Title */}
-        <h1 style={{
-          fontSize: "clamp(56px, 10vw, 120px)", fontWeight: 700,
-          fontFamily: "'Georgia', serif",
-          color: "transparent", margin: 0, lineHeight: 1,
-          background: "linear-gradient(180deg, #f0e6d3 0%, #c8a84e 40%, #8a6a2e 100%)",
-          WebkitBackgroundClip: "text", backgroundClip: "text",
-          letterSpacing: "0.08em",
-          textShadow: "0 0 60px rgba(200,168,78,0.3)",
-          filter: "drop-shadow(0 4px 30px rgba(200,168,78,0.2))",
-        }}>
-          TRENCH
-        </h1>
-
-        {/* Decorative line */}
-        <div style={{
-          width: 120, height: 1, margin: "20px 0",
-          background: "linear-gradient(90deg, transparent, #c8a84e, transparent)",
+        {/* Logo — big, centered, full viewport width */}
+        <img src="/logo.png" alt="TRENCH" style={{
+          width: "clamp(300px, 70vw, 900px)", maxHeight: "30vh",
+          objectFit: "contain",
+          filter: "drop-shadow(0 0 40px rgba(200,168,78,0.3))",
+          marginBottom: 16,
         }} />
 
         {/* Tagline */}
         <p style={{
           fontSize: "clamp(14px, 2vw, 18px)", color: "#8a7a5e",
           letterSpacing: "0.2em", textTransform: "uppercase",
-          margin: "0 0 40px", fontFamily: "monospace",
+          margin: "0 0 36px", fontFamily: "monospace",
         }}>
           Dig deep · Find treasure · Claim the prize
         </p>
 
         {/* Hidden treasure callout */}
         <div style={{
-          maxWidth: 480, textAlign: "center", marginBottom: 48,
+          maxWidth: 480, textAlign: "center", marginBottom: 40,
           padding: "24px 32px",
           border: "1px solid rgba(200,168,78,0.15)",
           borderRadius: 12,
@@ -198,14 +184,35 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
           ENTER THE MINE SHAFT
         </button>
 
-        {/* Subtle depth indicator */}
+        {/* CA + X link */}
         <div style={{
-          marginTop: 32, display: "flex", alignItems: "center", gap: 8,
-          color: "#4a4030", fontSize: 11, fontFamily: "monospace", letterSpacing: "0.1em",
+          marginTop: 28, display: "flex", alignItems: "center", gap: 20,
+          fontFamily: "monospace", fontSize: 12,
         }}>
-          <div style={{ width: 1, height: 24, background: "linear-gradient(180deg, #c8a84e44, transparent)" }} />
-          <span>Depth unknown</span>
-          <div style={{ width: 1, height: 24, background: "linear-gradient(180deg, #c8a84e44, transparent)" }} />
+          <span
+            onClick={() => { navigator.clipboard.writeText("TBA"); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            style={{
+              color: "#6a5a3a", cursor: "pointer", padding: "6px 14px",
+              border: "1px solid rgba(200,168,78,0.15)", borderRadius: 6,
+              background: "rgba(200,168,78,0.03)",
+              transition: "color 0.2s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = "#c8a84e"}
+            onMouseLeave={e => e.currentTarget.style.color = "#6a5a3a"}
+          >
+            CA: TBA {copied ? "✓ Copied" : "📋"}
+          </span>
+          <a href="https://x.com" target="_blank" rel="noopener noreferrer" style={{
+            color: "#6a5a3a", textDecoration: "none", padding: "6px 14px",
+            border: "1px solid rgba(200,168,78,0.15)", borderRadius: 6,
+            background: "rgba(200,168,78,0.03)",
+            transition: "color 0.2s",
+          }}
+            onMouseEnter={e => e.currentTarget.style.color = "#c8a84e"}
+            onMouseLeave={e => e.currentTarget.style.color = "#6a5a3a"}
+          >
+            𝕏
+          </a>
         </div>
 
         {/* Bottom stats */}
