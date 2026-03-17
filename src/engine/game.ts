@@ -224,7 +224,7 @@ export function collectLoot(state: GameState, drop: LootDrop) {
 
 export function tryMove(state: GameState, dx: number, dy: number): boolean {
   const nx = state.px + dx, ny = state.py + dy;
-  if (nx < 0 || nx >= WORLD_W) return false;
+  if (nx < 0 || nx >= WORLD_W || ny < -1) return false;
   const tile = getTile(nx, ny);
   const walkable = tile.type === TileType.Air || tile.type === TileType.Water ||
     tile.type === TileType.Lava || tile.type === TileType.SpikeTrap ||
