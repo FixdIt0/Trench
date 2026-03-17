@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
+import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, smartDrop, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
 import { revealAround, TILE, getTile, TileType } from "../engine/world";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
@@ -129,6 +129,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   const [upgrades, setUpgrades] = useState<Upgrades>({ pickaxe: 0, sword: 0, lamp: 0, armor: 0 });
   const [showLB, setShowLB] = useState(false);
   const [lbSort, setLbSort] = useState<"points" | "kills">("points");
+  const [hudAnim, setHudAnim] = useState(0);
   const tickRef = useRef(0);
   const { otherPlayers, allPlayers, killFeed, sendMove, sendAttack } = useMultiplayer(walletAddr);
   const otherPlayersRef = useRef<PlayerState[]>([]);
@@ -184,15 +185,25 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         let dx = 0, dy = 0;
         if (keys.has("a") || keys.has("arrowleft")) dx = -1;
         else if (keys.has("d") || keys.has("arrowright")) dx = 1;
-        else if (keys.has("s") || keys.has("arrowdown")) dy = 1;
-        else if (keys.has("w") || keys.has("arrowup")) dy = -1;
+        else if (keys.has("w") || keys.has("arrowup")) { dy = -1; s.lastDir = -1; }
+        else if (keys.has("s") || keys.has("arrowdown")) {
+          // S = smart drop through air, or dig/move
+          s.lastDir = 1;
+          if (!smartDrop(s)) {
+            if (!tryMove(s, 0, 1)) tryDig(s, 0, 1);
+          }
+          dx = 0; dy = 0; // handled
+        }
 
         if (dx !== 0 || dy !== 0) {
           if (!tryMove(s, dx, dy)) tryDig(s, dx, dy);
         }
 
         if (keys.has(" ")) {
-          if (!tryMove(s, 0, 1)) tryDig(s, 0, 1);
+          s.lastDir = 1;
+          if (!smartDrop(s)) {
+            if (!tryMove(s, 0, 1)) tryDig(s, 0, 1);
+          }
         }
 
         if (s.lightRadius > s.baseLightRadius) s.lightRadius = Math.max(s.baseLightRadius, s.lightRadius - 0.01);
@@ -206,6 +217,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       setLight(s.lightRadius);
       setBuffs({ ...s.buffs });
       setUpgrades({ ...s.upgrades });
+      setHudAnim(s.hudAnim);
 
       // Send position to server every 10 frames
       if (tickRef.current % 10 === 0) {
@@ -233,12 +245,19 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
             if (!t.revealed) continue;
             const mx = 60 + dx * 2, my = 60 + dy * 2;
             if (mx < 0 || mx >= 120 || my < 0 || my >= 120) continue;
-            if (t.type === TileType.Air) { mctx.fillStyle = "#111"; }
+            // Path taken = bright trail
+            const isPath = s.pathHistory.has(`${tx},${ty}`);
+            if (t.type === TileType.Air) { mctx.fillStyle = isPath ? "#332200" : "#111"; }
             else if (t.type === TileType.Lava) { mctx.fillStyle = "#ff4500"; }
             else if (t.type === TileType.Water) { mctx.fillStyle = "#1a5276"; }
             else if (t.type === TileType.SpikeTrap) { mctx.fillStyle = "#888"; }
             else { mctx.fillStyle = "#333"; }
             mctx.fillRect(mx, my, 2, 2);
+            // Draw path overlay
+            if (isPath && t.type === TileType.Air) {
+              mctx.fillStyle = "#c8a84e55";
+              mctx.fillRect(mx, my, 2, 2);
+            }
           }
         }
         // Player dot
@@ -291,7 +310,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       <canvas ref={canvasRef} onClick={handleClick} style={{ display: "block" }} />
 
       {/* HUD */}
-      <div style={{ position: "absolute", top: 16, left: 16, color: "#fff", fontFamily: "monospace", pointerEvents: "none" }}>
+      <div style={{ position: "absolute", top: 16, left: 16, color: "#fff", fontFamily: "monospace", pointerEvents: "none", transform: `translateX(${Math.min(0, -200 + hudAnim * 4)}px)`, opacity: Math.min(1, hudAnim / 30), transition: "none" }}>
         <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: 2 }}>TRENCH</div>
         <div style={{ fontSize: 14, color: depthColor, marginTop: 4 }}>{depthLabel}</div>
         <div style={{ fontSize: 20, marginTop: 8 }}>
@@ -503,7 +522,36 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         <div style={{
           position: "absolute", inset: 0, background: "rgba(0,0,0,0.85)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10,
+          overflow: "hidden",
         }}>
+          {/* Animated background — scrolling underground layers */}
+          <div style={{ position: "absolute", inset: 0, opacity: 0.15, pointerEvents: "none" }}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} style={{
+                position: "absolute", left: 0, right: 0,
+                top: `${12 + i * 11}%`, height: "12%",
+                background: ["#5c3d2e", "#6b6b7b", "#4a4a5e", "#7b4fbf", "#1a1a2e", "#3d3d50", "#5c3d2e", "#4a4a5e"][i],
+                animation: `scrollBg ${8 + i * 2}s linear infinite`,
+                animationDelay: `${i * 0.5}s`,
+              }}>
+                {/* Glowing ore dots */}
+                {Array.from({ length: 6 }).map((_, j) => (
+                  <div key={j} style={{
+                    position: "absolute",
+                    left: `${10 + j * 15 + i * 3}%`, top: "30%",
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: ["#ffd700", "#e0115f", "#b9f2ff", "#50c878", "#9966cc", "#ff3333"][j],
+                    boxShadow: `0 0 8px ${["#ffd700", "#e0115f", "#b9f2ff", "#50c878", "#9966cc", "#ff3333"][j]}`,
+                    animation: `pulse ${1.5 + j * 0.3}s ease-in-out infinite`,
+                  }} />
+                ))}
+              </div>
+            ))}
+            <style>{`
+              @keyframes scrollBg { 0% { transform: translateX(-10%); } 100% { transform: translateX(10%); } }
+              @keyframes pulse { 0%,100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
+            `}</style>
+          </div>
           <div style={{
             background: "#0d0d18", border: "1px solid #2a2a3e", borderRadius: 16,
             padding: "36px 40px", maxWidth: 560, fontFamily: "monospace", color: "#ccc", textAlign: "center",

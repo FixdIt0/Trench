@@ -136,6 +136,15 @@ export function generateTile(x: number, y: number): Tile {
   const depth = y;
   if (depth < 0) return { type: TileType.Air, revealed: true, hp: 0 };
 
+  // Pre-dug holes at surface — random shafts showing previous miners
+  if (depth >= 0 && depth < 12) {
+    const holeHash = hashCoord(Math.floor(x / 3), 0, SEED + 1100);
+    if (holeHash < 0.04 && (x % 3 === 1)) {
+      const holeDepth = 3 + Math.floor(holeHash * 200);
+      if (depth < holeDepth) return { type: TileType.Air, revealed: true, hp: 0 };
+    }
+  }
+
   // Cave generation
   const cave = fractalNoise(x, y, SEED, 4, 24);
   const bigCave = fractalNoise(x, y, SEED + 500, 2, 60);
@@ -152,17 +161,16 @@ export function generateTile(x: number, y: number): Tile {
       const lavaNoise = fractalNoise(x, y, SEED + 300, 2, 12);
       if (lavaNoise > 0.72) return { type: TileType.Lava, revealed: false, hp: 0, glow: 0.8 };
     }
-    // Mushrooms in caves
-    if (depth > 20 && depth < 100) {
-      const mush = hashCoord(x, y, SEED + 400);
-      if (mush < 0.08) return { type: TileType.Mushroom, revealed: false, hp: 1, glow: 0.4 };
-    }
-    // Powerups in caves
+    // Mushrooms in caves — all depths
+    const mush = hashCoord(x, y, SEED + 400);
+    if (depth > 5 && mush < 0.06) return { type: TileType.Mushroom, revealed: false, hp: 1, glow: 0.7 };
+
+    // Powerups in caves — consistent at ALL depths, no depth gating
     const pu = hashCoord(x, y, SEED + 700);
-    if (depth > 15 && pu < 0.012) return { type: TileType.Dynamite, revealed: false, hp: 1, glow: 0.6 };
-    if (depth > 40 && pu > 0.012 && pu < 0.022) return { type: TileType.SpeedPotion, revealed: false, hp: 1, glow: 0.5 };
-    if (depth > 80 && pu > 0.022 && pu < 0.030) return { type: TileType.Shield, revealed: false, hp: 1, glow: 0.5 };
-    if (depth > 60 && pu > 0.030 && pu < 0.038) return { type: TileType.Magnet, revealed: false, hp: 1, glow: 0.5 };
+    if (depth > 5 && pu < 0.010) return { type: TileType.Dynamite, revealed: false, hp: 1, glow: 1.0 };
+    if (depth > 5 && pu > 0.010 && pu < 0.018) return { type: TileType.SpeedPotion, revealed: false, hp: 1, glow: 1.0 };
+    if (depth > 5 && pu > 0.018 && pu < 0.025) return { type: TileType.Shield, revealed: false, hp: 1, glow: 1.0 };
+    if (depth > 5 && pu > 0.025 && pu < 0.032) return { type: TileType.Magnet, revealed: false, hp: 1, glow: 1.0 };
     return { type: TileType.Air, revealed: false, hp: 0 };
   }
 

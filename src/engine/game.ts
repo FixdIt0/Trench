@@ -31,6 +31,8 @@ export interface AIEntity {
   dead: boolean;
 }
 
+export interface Star { x: number; y: number; size: number; twinkleSpeed: number; brightness: number; }
+
 export interface GameState {
   px: number; py: number;
   camX: number; camY: number;
@@ -54,7 +56,13 @@ export interface GameState {
   aiEntities: AIEntity[];
   shakeTimer: number;
   shakeIntensity: number;
-  invincible: number; // ticks of respawn invincibility
+  invincible: number;
+  stars: Star[];
+  trail: Particle[];
+  lastDir: number; // -1=up, 0=none, 1=down
+  spawnAnim: number; // ticks remaining for spawn zoom
+  pathHistory: Set<string>; // visited tile keys for minimap
+  hudAnim: number; // ticks since game started (for slide-in)
 }
 
 export interface Upgrade {
@@ -140,6 +148,20 @@ function spawnAIEntities(): AIEntity[] {
   return entities;
 }
 
+function generateStars(): Star[] {
+  const stars: Star[] = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * WORLD_W * TILE,
+      y: -20 * TILE + Math.random() * 18 * TILE,
+      size: 0.5 + Math.random() * 2,
+      twinkleSpeed: 0.02 + Math.random() * 0.06,
+      brightness: 0.3 + Math.random() * 0.7,
+    });
+  }
+  return stars;
+}
+
 export function createGameState(): GameState {
   return {
     px: Math.floor(WORLD_W / 2), py: -1,
@@ -155,6 +177,12 @@ export function createGameState(): GameState {
     aiEntities: spawnAIEntities(),
     shakeTimer: 0, shakeIntensity: 0,
     invincible: 0,
+    stars: generateStars(),
+    trail: [],
+    lastDir: 0,
+    spawnAnim: 90, // 1.5 sec zoom
+    pathHistory: new Set(),
+    hudAnim: 0,
   };
 }
 
@@ -247,6 +275,14 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   }
 
   state.px = nx; state.py = ny;
+  state.lastDir = dy;
+  state.pathHistory.add(`${nx},${ny}`);
+  // Trail particle
+  state.trail.push({
+    x: nx * TILE + TILE / 2, y: ny * TILE + TILE / 2,
+    vx: 0, vy: 0, life: 40, maxLife: 40,
+    color: "#ffe06644", size: TILE * 0.6,
+  });
   if (ny > state.maxDepth) state.maxDepth = ny;
   revealAround(nx, ny, state.lightRadius);
   return true;
@@ -345,9 +381,32 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
     }
     setTile(tx, ty, { type: TileType.Air, revealed: true, hp: 0 });
     state.digging = null;
+    // Auto-drop: if we mined the block below us, move into it
+    if (dx === 0 && dy === 1) {
+      state.py = ty;
+      state.lastDir = 1;
+      state.pathHistory.add(`${state.px},${ty}`);
+      if (ty > state.maxDepth) state.maxDepth = ty;
+      revealAround(state.px, state.py, state.lightRadius);
+      state.trail.push({ x: state.px * TILE + TILE / 2, y: ty * TILE + TILE / 2, vx: 0, vy: 0, life: 40, maxLife: 40, color: "#ffe06644", size: TILE * 0.6 });
+    }
     return true;
   }
   return false;
+}
+
+// Smart drop: pressing S drops through air to nearest solid block below
+export function smartDrop(state: GameState): boolean {
+  const below = getTile(state.px, state.py + 1);
+  if (below.type !== TileType.Air && below.type !== TileType.Water) return false;
+  // Drop one tile at a time (called each movement tick)
+  state.py++;
+  state.lastDir = 1;
+  state.pathHistory.add(`${state.px},${state.py}`);
+  if (state.py > state.maxDepth) state.maxDepth = state.py;
+  revealAround(state.px, state.py, state.lightRadius);
+  state.trail.push({ x: state.px * TILE + TILE / 2, y: state.py * TILE + TILE / 2, vx: 0, vy: 0, life: 40, maxLife: 40, color: "#ffe06644", size: TILE * 0.6 });
+  return true;
 }
 
 // Death: lose 20% balance, respawn with invincibility
@@ -508,22 +567,29 @@ export function updateParticles(state: GameState) {
     f.y += f.vy; f.life--;
     return f.life > 0;
   });
+  state.trail = state.trail.filter(t => { t.life--; return t.life > 0; });
   if (state.swing.timer > 0) state.swing.timer--;
   if (state.buffs.speed > 0) state.buffs.speed--;
   if (state.buffs.shield > 0) state.buffs.shield--;
   if (state.buffs.magnet > 0) state.buffs.magnet--;
   if (state.shakeTimer > 0) state.shakeTimer--;
   if (state.invincible > 0) state.invincible--;
+  if (state.spawnAnim > 0) state.spawnAnim--;
+  state.hudAnim = Math.min(60, state.hudAnim + 1);
 }
 
 export function spawnAmbientParticles(state: GameState) {
-  if (state.py > 30 && Math.random() < 0.1) {
-    const ox = (Math.random() - 0.5) * state.lightRadius * TILE * 2;
+  // Dense cave dust in light cone
+  if (state.py > 5 && Math.random() < 0.25) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * state.lightRadius * TILE * 0.8;
     state.ambientParticles.push({
-      x: state.px * TILE + TILE / 2 + ox,
-      y: state.py * TILE - state.lightRadius * TILE,
-      vx: (Math.random() - 0.5) * 0.3, vy: 0.3 + Math.random() * 0.5,
-      life: 120, maxLife: 120, color: state.py > 180 ? "#ff450033" : "#ffffff11", size: 1 + Math.random() * 2,
+      x: state.px * TILE + TILE / 2 + Math.cos(angle) * dist,
+      y: state.py * TILE + TILE / 2 + Math.sin(angle) * dist,
+      vx: (Math.random() - 0.5) * 0.2, vy: 0.1 + Math.random() * 0.3,
+      life: 80 + Math.random() * 60, maxLife: 140,
+      color: state.py > 180 ? "#ff450022" : "#ffffff0d",
+      size: 0.5 + Math.random() * 1.5,
     });
   }
   state.ambientParticles = state.ambientParticles.filter(p => {
@@ -684,10 +750,59 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
   ctx.fillStyle = getLayerBg(state.py);
   ctx.fillRect(0, 0, W, H);
 
+  // Spawn animation: camera starts high
+  if (state.spawnAnim > 0) {
+    const t = state.spawnAnim / 90;
+    state.camY -= t * t * 400;
+  }
+
   const startTX = Math.floor(state.camX / TILE) - 1;
   const startTY = Math.floor(state.camY / TILE) - 1;
   const endTX = startTX + Math.ceil(W / TILE) + 2;
   const endTY = startTY + Math.ceil(H / TILE) + 2;
+
+  // Starfield sky — only render when sky is visible
+  if (startTY < 0) {
+    // Sky gradient
+    const skyTop = Math.floor(-20 * TILE - state.camY);
+    const skyBot = Math.floor(0 * TILE - state.camY);
+    if (skyBot > 0) {
+      const grad = ctx.createLinearGradient(0, Math.max(0, skyTop), 0, skyBot);
+      grad.addColorStop(0, "#050510");
+      grad.addColorStop(0.4, "#0a0a20");
+      grad.addColorStop(0.8, "#151530");
+      grad.addColorStop(1, "#1a120d");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, Math.max(0, skyTop), W, skyBot - Math.max(0, skyTop));
+    }
+    // Stars
+    for (const star of state.stars) {
+      const sx = star.x - state.camX;
+      const sy = star.y - state.camY;
+      if (sx < -5 || sx > W + 5 || sy < -5 || sy > H + 5) continue;
+      const twinkle = (Math.sin(state.gameTime * star.twinkleSpeed) * 0.3 + 0.7) * star.brightness;
+      ctx.fillStyle = `rgba(255,255,240,${twinkle})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, star.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Moon
+    const moonX = WORLD_W * TILE * 0.7 - state.camX;
+    const moonY = -15 * TILE - state.camY;
+    if (moonX > -50 && moonX < W + 50 && moonY > -50 && moonY < H + 50) {
+      ctx.fillStyle = "#e8e0c8";
+      ctx.shadowColor = "#ffe8aa";
+      ctx.shadowBlur = 30;
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, 20, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#050510";
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(moonX + 6, moonY - 4, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   // Draw tiles
   for (let ty = startTY; ty <= endTY; ty++) {
@@ -697,13 +812,25 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
       const sy = Math.floor(ty * TILE - state.camY);
 
       if (!tile.revealed) {
-        // Glow through unrevealed tiles
+        // Powerups and ores glow through darkness — visible from far away
         if (tile.glow && tile.glow > 0) {
           const dist = Math.sqrt((tx - state.px) ** 2 + (ty - state.py) ** 2);
-          if (dist < state.lightRadius + 3) {
-            ctx.fillStyle = getTileColor(tile.type);
-            ctx.globalAlpha = tile.glow * Math.max(0, 1 - dist / (state.lightRadius + 3));
+          const isPowerup = tile.type === TileType.Dynamite || tile.type === TileType.SpeedPotion || tile.type === TileType.Shield || tile.type === TileType.Magnet || tile.type === TileType.Mushroom;
+          const glowRange = isPowerup ? state.lightRadius + 10 : state.lightRadius + 3;
+          if (dist < glowRange) {
+            const glowColor = getTileColor(tile.type);
+            const intensity = isPowerup ? tile.glow * Math.max(0.1, 1 - dist / glowRange) : tile.glow * Math.max(0, 1 - dist / glowRange);
+            // Pulsing halo
+            const pulse = Math.sin(state.gameTime * 0.06 + tx + ty) * 0.2 + 0.8;
+            ctx.fillStyle = glowColor;
+            ctx.globalAlpha = intensity * pulse;
             ctx.fillRect(sx, sy, TILE, TILE);
+            if (isPowerup && dist < glowRange * 0.7) {
+              ctx.shadowColor = glowColor;
+              ctx.shadowBlur = 20 * intensity * pulse;
+              ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+              ctx.shadowBlur = 0;
+            }
             ctx.globalAlpha = 1;
           }
         }
@@ -711,12 +838,6 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
       }
 
       if (tile.type === TileType.Air) {
-        // Sky above ground
-        if (ty < 0) {
-          const skyGrad = Math.max(0, Math.min(1, (0 - ty) / 20));
-          ctx.fillStyle = `rgb(${15 + skyGrad * 30}, ${15 + skyGrad * 40}, ${30 + skyGrad * 60})`;
-          ctx.fillRect(sx, sy, TILE, TILE);
-        }
         continue;
       }
 
@@ -733,14 +854,18 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
       ctx.fillStyle = texNoise > 0.5 ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.06)";
       ctx.fillRect(sx, sy, TILE, TILE);
 
-      // Ore glow
+      // Ore glow with pulsing halo
       if (tile.glow && tile.glow > 0) {
         const glowColor = getTileColor(tile.type);
+        const pulse = Math.sin(state.gameTime * 0.06 + tx * 1.5 + ty) * 0.3 + 0.7;
         ctx.shadowColor = glowColor;
-        ctx.shadowBlur = tile.glow * 15 * lightFalloff;
+        ctx.shadowBlur = tile.glow * 20 * lightFalloff * pulse;
         ctx.fillStyle = glowColor;
-        ctx.globalAlpha = tile.glow * 0.5 * lightFalloff;
-        ctx.fillRect(sx + 4, sy + 4, TILE - 8, TILE - 8);
+        ctx.globalAlpha = tile.glow * 0.6 * lightFalloff * pulse;
+        ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+        // Outer halo ring
+        ctx.globalAlpha = tile.glow * 0.15 * lightFalloff * pulse;
+        ctx.fillRect(sx - 4, sy - 4, TILE + 8, TILE + 8);
         ctx.shadowBlur = 0;
       }
 
@@ -783,7 +908,98 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
     }
   }
 
-  // Ambient particles
+  // Surface vegetation — grass tufts and flowers at y=0
+  if (startTY <= 0 && endTY >= 0) {
+    const groundScreenY = Math.floor(0 * TILE - state.camY);
+    for (let tx = startTX; tx <= endTX; tx++) {
+      const t = getTile(tx, 0);
+      if (t.type !== TileType.Dirt && t.type !== TileType.Moss) continue;
+      const above = getTile(tx, -1);
+      if (above.type !== TileType.Air) continue;
+      const gx = Math.floor(tx * TILE - state.camX);
+      const sway = Math.sin(state.gameTime * 0.03 + tx * 0.8) * 2;
+      const seed = (tx * 7 + 13) % 5;
+      ctx.globalAlpha = 0.9;
+      if (seed < 2) {
+        // Grass tuft
+        ctx.strokeStyle = "#4a7a3d";
+        ctx.lineWidth = 1.5;
+        for (let b = -1; b <= 1; b++) {
+          ctx.beginPath();
+          ctx.moveTo(gx + 8 + b * 5, groundScreenY);
+          ctx.lineTo(gx + 8 + b * 5 + sway + b * 2, groundScreenY - 8 - (seed + 1) * 2);
+          ctx.stroke();
+        }
+      } else if (seed === 2) {
+        // Flower
+        ctx.fillStyle = ["#ff6b8a", "#ffaa44", "#aa66ff"][tx % 3];
+        ctx.beginPath();
+        ctx.arc(gx + TILE / 2 + sway, groundScreenY - 10, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#3a6a2d";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(gx + TILE / 2, groundScreenY);
+        ctx.lineTo(gx + TILE / 2 + sway, groundScreenY - 8);
+        ctx.stroke();
+      } else {
+        // Tall grass
+        ctx.strokeStyle = "#5a8a4d";
+        ctx.lineWidth = 1;
+        for (let b = 0; b < 3; b++) {
+          ctx.beginPath();
+          ctx.moveTo(gx + 4 + b * 7, groundScreenY);
+          ctx.quadraticCurveTo(gx + 4 + b * 7 + sway * 1.5, groundScreenY - 6, gx + 4 + b * 7 + sway * 2, groundScreenY - 12);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Torch particles at surface near billboard
+  const billboardCenterX = Math.floor(WORLD_W / 2);
+  for (const torchX of [billboardCenterX - 12, billboardCenterX + 12]) {
+    const tsx = Math.floor(torchX * TILE - state.camX);
+    const tsy = Math.floor(-1 * TILE - state.camY);
+    if (tsx > -50 && tsx < W + 50 && tsy > -50 && tsy < H + 50) {
+      // Torch base
+      ctx.fillStyle = "#8B4513";
+      ctx.fillRect(tsx + 10, tsy + 4, 4, 16);
+      // Flame
+      const flicker = Math.sin(state.gameTime * 0.15 + torchX) * 2;
+      ctx.fillStyle = "#ff8800";
+      ctx.beginPath();
+      ctx.ellipse(tsx + 12, tsy + 2 + flicker, 4, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffcc00";
+      ctx.beginPath();
+      ctx.ellipse(tsx + 12, tsy + 3 + flicker, 2, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Ember particles
+      if (Math.random() < 0.3) {
+        state.particles.push({
+          x: tsx + state.camX + 12, y: tsy + state.camY + flicker,
+          vx: (Math.random() - 0.5) * 1.5, vy: -1 - Math.random() * 2,
+          life: 20 + Math.random() * 20, maxLife: 40, color: "#ff6600", size: 1 + Math.random(),
+        });
+      }
+    }
+  }
+
+  // Player trail glow
+  for (const t of state.trail) {
+    const tsx = t.x - state.camX;
+    const tsy = t.y - state.camY;
+    ctx.fillStyle = t.color;
+    ctx.globalAlpha = (t.life / t.maxLife) * 0.25;
+    ctx.beginPath();
+    ctx.arc(tsx, tsy, t.size * (t.life / t.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ambient particles — enhanced cave dust in light cone
   for (const p of state.ambientParticles) {
     ctx.fillStyle = p.color;
     ctx.globalAlpha = p.life / p.maxLife;
