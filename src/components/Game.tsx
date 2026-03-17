@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, smartDrop, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
 import { revealAround, TILE, getTile, TileType } from "../engine/world";
-import { preloadAudio, startAmbient } from "../engine/audio";
+import { preloadAudio, startAmbient, play as playSfx } from "../engine/audio";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
 
@@ -293,7 +293,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       // Attack other player?
       if (s.upgrades.sword > 0) {
         const target = otherPlayersRef.current.find(p => p.x === worldX && p.y === worldY);
-        if (target) { sendAttack(target.id); return; }
+        if (target) { playSfx("sword"); sendAttack(target.id); return; }
       }
       if (!tryMove(s, dx, dy)) tryDig(s, dx, dy);
     }
