@@ -89,12 +89,12 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "#060608", overflow: "hidden",
+      position: "fixed", inset: 0, background: "#060608", overflow: "auto",
       fontFamily: "'Georgia', 'Times New Roman', serif",
       cursor: "none",
     }}>
       {/* Lantern cursor overlay */}
-      <canvas ref={lanternRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 50 }} />
+      <canvas ref={lanternRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 50 }} />
       {/* Animated dust particles */}
       {particles.map((p, i) => {
         const y = (p.y + frame * p.speed) % 110 - 5;
@@ -119,9 +119,9 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
 
       {/* Content */}
       <div style={{
-        position: "relative", zIndex: 2, height: "100%",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        padding: "0 24px",
+        position: "relative", zIndex: 2, minHeight: "100%",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        padding: "60px 24px 100px",
       }}>
         {/* Logo — big, centered, full viewport width */}
         <img src="/logo.png" alt="TRENCH" style={{
@@ -135,14 +135,14 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
         <p style={{
           fontSize: "clamp(14px, 2vw, 18px)", color: "#8a7a5e",
           letterSpacing: "0.2em", textTransform: "uppercase",
-          margin: "0 0 36px", fontFamily: "monospace",
+          margin: "0 0 48px", fontFamily: "monospace",
         }}>
           Dig deep · Find treasure · Claim the prize
         </p>
 
         {/* Hidden treasure callout */}
         <div style={{
-          maxWidth: 480, textAlign: "center", marginBottom: 40,
+          maxWidth: 480, textAlign: "center", marginBottom: 48,
           padding: "24px 32px",
           border: "1px solid rgba(200,168,78,0.15)",
           borderRadius: 12,
@@ -172,7 +172,7 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
         {/* Features grid */}
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12,
-          maxWidth: 560, width: "100%", marginBottom: 40,
+          maxWidth: 560, width: "100%", marginBottom: 48,
         }}>
           {[
             { icon: "⛏️", title: "Upgrade Tools", desc: "6 pickaxe tiers. Mine faster, dig deeper." },
@@ -214,8 +214,8 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
 
         {/* CA + X link */}
         <div style={{
-          marginTop: 28, display: "flex", alignItems: "center", gap: 20,
-          fontFamily: "monospace", fontSize: 12,
+          marginTop: 36, display: "flex", alignItems: "center", gap: 20,
+          fontFamily: "monospace", fontSize: 13,
         }}>
           <span
             onClick={() => { navigator.clipboard.writeText("F8KqRqh1SWRDPcvDnTWvjFS87bEjzvf4C1e94ofKpump"); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
@@ -245,7 +245,7 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
 
         {/* Bottom stats */}
         <div style={{
-          position: "absolute", bottom: 32, display: "flex", gap: 48,
+          marginTop: 48, display: "flex", gap: 48,
           color: "#3a3020", fontSize: 11, fontFamily: "monospace", letterSpacing: "0.1em",
         }}>
           <span>Solana-powered</span>
