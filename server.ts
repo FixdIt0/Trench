@@ -42,7 +42,7 @@ wss.on("connection", (ws) => {
       playerId = msg.wallet;
       players.set(playerId, {
         ws,
-        state: { id: playerId, x: 100, y: -1, hp: 10, maxHp: 10, swordTier: 0, falling: false },
+        state: { id: playerId, x: 100, y: -1, hp: 10, maxHp: 10, swordTier: 0, falling: false, kills: 0, totalEarned: 0, depth: 0 },
       });
       broadcastPlayers();
     }
@@ -55,6 +55,8 @@ wss.on("connection", (ws) => {
         p.state.hp = msg.hp;
         p.state.falling = msg.falling;
         p.state.swordTier = msg.swordTier;
+        p.state.totalEarned = msg.totalEarned;
+        p.state.depth = msg.depth;
         broadcastPlayers();
       }
     }
@@ -76,6 +78,7 @@ wss.on("connection", (ws) => {
       broadcast({ type: "hit", attackerId: playerId, targetId: msg.targetId, damage: dmg, targetHp: target.state.hp });
 
       if (target.state.hp <= 0) {
+        attacker.state.kills++;
         broadcast({ type: "kill", killerId: playerId, victimId: msg.targetId });
         // Respawn target
         target.state.hp = target.state.maxHp;

@@ -1,19 +1,22 @@
 // Multiplayer protocol types — shared between client and server
 
 export interface PlayerState {
-  id: string;       // wallet address
+  id: string;
   x: number;
   y: number;
   hp: number;
   maxHp: number;
-  swordTier: number; // 0 = no sword
+  swordTier: number;
   falling: boolean;
+  kills: number;
+  totalEarned: number;
+  depth: number;
 }
 
 // Client → Server
 export type ClientMsg =
   | { type: "join"; wallet: string }
-  | { type: "move"; x: number; y: number; hp: number; falling: boolean; swordTier: number }
+  | { type: "move"; x: number; y: number; hp: number; falling: boolean; swordTier: number; totalEarned: number; depth: number }
   | { type: "attack"; targetId: string };
 
 // Server → Client

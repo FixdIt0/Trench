@@ -4,6 +4,7 @@ import type { ClientMsg, ServerMsg, PlayerState } from "../engine/protocol";
 export function useMultiplayer(walletAddr: string | undefined) {
   const wsRef = useRef<WebSocket | null>(null);
   const [otherPlayers, setOtherPlayers] = useState<PlayerState[]>([]);
+  const [allPlayers, setAllPlayers] = useState<PlayerState[]>([]);
   const [killFeed, setKillFeed] = useState<{ text: string; time: number }[]>([]);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export function useMultiplayer(walletAddr: string | undefined) {
     ws.onmessage = (e) => {
       const msg: ServerMsg = JSON.parse(e.data);
       if (msg.type === "players") {
+        setAllPlayers(msg.players);
         setOtherPlayers(msg.players.filter(p => p.id !== walletAddr));
       }
       if (msg.type === "hit") {
@@ -37,10 +39,10 @@ export function useMultiplayer(walletAddr: string | undefined) {
     return () => { ws.close(); wsRef.current = null; };
   }, [walletAddr]);
 
-  const sendMove = useCallback((x: number, y: number, hp: number, falling: boolean, swordTier: number) => {
+  const sendMove = useCallback((x: number, y: number, hp: number, falling: boolean, swordTier: number, totalEarned: number, depth: number) => {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      const msg: ClientMsg = { type: "move", x, y, hp, falling, swordTier };
+      const msg: ClientMsg = { type: "move", x, y, hp, falling, swordTier, totalEarned, depth };
       ws.send(JSON.stringify(msg));
     }
   }, []);
@@ -61,5 +63,5 @@ export function useMultiplayer(walletAddr: string | undefined) {
     return () => clearInterval(t);
   }, []);
 
-  return { otherPlayers, killFeed, sendMove, sendAttack };
+  return { otherPlayers, allPlayers, killFeed, sendMove, sendAttack };
 }

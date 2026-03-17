@@ -126,8 +126,10 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   const [falling, setFalling] = useState(false);
   const [buffs, setBuffs] = useState<Buffs>({ speed: 0, shield: 0, magnet: 0 });
   const [upgrades, setUpgrades] = useState<Upgrades>({ pickaxe: 0, sword: 0, lamp: 0, armor: 0 });
+  const [showLB, setShowLB] = useState(false);
+  const [lbSort, setLbSort] = useState<"points" | "kills">("points");
   const tickRef = useRef(0);
-  const { otherPlayers, killFeed, sendMove, sendAttack } = useMultiplayer(walletAddr);
+  const { otherPlayers, allPlayers, killFeed, sendMove, sendAttack } = useMultiplayer(walletAddr);
   const otherPlayersRef = useRef<PlayerState[]>([]);
 
   useEffect(() => { otherPlayersRef.current = otherPlayers; }, [otherPlayers]);
@@ -209,7 +211,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
 
       // Send position to server every 10 frames
       if (tickRef.current % 10 === 0) {
-        sendMove(s.px, s.py, s.hp, s.falling, s.upgrades.sword);
+        sendMove(s.px, s.py, s.hp, s.falling, s.upgrades.sword, s.totalEarned, s.maxDepth);
       }
 
       updateParticles(s);
@@ -292,6 +294,44 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         {buffs.shield > 0 && <BuffBar label="Shield" value={buffs.shield} max={600} color="#4488ff" />}
         {buffs.magnet > 0 && <BuffBar label="Magnet" value={buffs.magnet} max={600} color="#ff8800" />}
       </div>
+
+      {/* Leaderboard toggle */}
+      <button
+        onClick={() => setShowLB(v => !v)}
+        style={{
+          position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
+          padding: "6px 16px", background: showLB ? "#c8a84e" : "rgba(200,168,78,0.15)",
+          color: showLB ? "#0d0d18" : "#c8a84e", border: "1px solid #c8a84e33",
+          borderRadius: 6, fontSize: 11, fontFamily: "monospace", fontWeight: 700, cursor: "pointer", zIndex: 5,
+        }}
+      >
+        🏆 LEADERBOARD
+      </button>
+
+      {/* Leaderboard panel */}
+      {showLB && (
+        <div style={{
+          position: "absolute", top: 44, left: "50%", transform: "translateX(-50%)",
+          background: "rgba(10,10,20,0.95)", border: "1px solid #333", borderRadius: 10,
+          padding: 16, minWidth: 300, fontFamily: "monospace", color: "#ccc", fontSize: 12, zIndex: 5,
+        }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            {(["points", "kills"] as const).map(s => (
+              <button key={s} onClick={() => setLbSort(s)} style={{
+                padding: "4px 12px", borderRadius: 4, border: "none", fontFamily: "monospace", fontSize: 11,
+                background: lbSort === s ? "#c8a84e" : "#222", color: lbSort === s ? "#0d0d18" : "#888", cursor: "pointer",
+              }}>{s === "points" ? "Points" : "Kills"}</button>
+            ))}
+          </div>
+          {[...allPlayers].sort((a, b) => lbSort === "kills" ? b.kills - a.kills : b.totalEarned - a.totalEarned).map((p, i) => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1a1a2e", color: p.id === walletAddr ? "#c8a84e" : "#aaa" }}>
+              <span>{i + 1}. {p.id.slice(0, 4)}..{p.id.slice(-4)}</span>
+              <span>{lbSort === "kills" ? `${p.kills} kills` : `${p.totalEarned} pts`} · {p.depth}m</span>
+            </div>
+          ))}
+          {allPlayers.length === 0 && <div style={{ color: "#555" }}>No players online</div>}
+        </div>
+      )}
 
       {/* Kill feed */}
       {killFeed.length > 0 && (

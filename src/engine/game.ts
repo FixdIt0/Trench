@@ -25,6 +25,7 @@ export interface GameState {
   floatingTexts: FloatingText[];
   inventory: Map<string, InventoryItem>;
   balance: number;
+  totalEarned: number;
   maxDepth: number;
   hp: number;
   maxHp: number;
@@ -100,7 +101,7 @@ export function createGameState(): GameState {
     px: Math.floor(WORLD_W / 2), py: -1,
     camX: Math.floor(WORLD_W / 2) * TILE, camY: -TILE,
     particles: [], floatingTexts: [],
-    inventory: new Map(), balance: 0, maxDepth: 0,
+    inventory: new Map(), balance: 0, totalEarned: 0, maxDepth: 0,
     hp: 10, maxHp: 10, falling: false, fallCount: 0,
     digPower: 1, lightRadius: 6, baseLightRadius: 6, digging: null,
     swing: { angle: 0, timer: 0, dirX: 1, dirY: 1 },
@@ -143,6 +144,7 @@ export function collectLoot(state: GameState, drop: LootDrop) {
   if (existing) existing.count++;
   else state.inventory.set(drop.name, { name: drop.name, count: 1, color: drop.color, rarity: drop.rarity, value: drop.value });
   state.balance += drop.value;
+  state.totalEarned += drop.value;
 }
 
 export function tryMove(state: GameState, dx: number, dy: number): boolean {
@@ -350,6 +352,100 @@ export function spawnAmbientParticles(state: GameState) {
   });
 }
 
+// Billboard
+function renderBillboard(ctx: CanvasRenderingContext2D, state: GameState) {
+  const bx = Math.floor(WORLD_W / 2); // center of world
+  const by = -8; // above surface
+  const sx = Math.floor(bx * TILE - state.camX) - 120;
+  const sy = Math.floor(by * TILE - state.camY);
+
+  // Only render if somewhat on screen
+  if (sy > ctx.canvas.height + 100 || sy < -300) return;
+
+  const t = state.gameTime;
+
+  // Support posts
+  ctx.fillStyle = "#5c3d2e";
+  ctx.fillRect(sx + 20, sy + 60, 8, 80);
+  ctx.fillRect(sx + 212, sy + 60, 8, 80);
+
+  // Board background with 3D depth
+  ctx.fillStyle = "#1a1008";
+  ctx.fillRect(sx + 6, sy + 6, 240, 64); // shadow
+  ctx.fillStyle = "#2a1a0a";
+  ctx.fillRect(sx + 3, sy + 3, 240, 64); // mid
+  ctx.fillStyle = "#3d2810";
+  ctx.fillRect(sx, sy, 240, 64); // front
+
+  // Border
+  ctx.strokeStyle = "#c8a84e";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx, sy, 240, 64);
+
+  // Bulb lights along top
+  for (let i = 0; i < 8; i++) {
+    const lx = sx + 18 + i * 30;
+    const pulse = Math.sin(t * 0.08 + i * 1.2) * 0.3 + 0.7;
+    const color = i % 2 === 0 ? `rgba(255,220,100,${pulse})` : `rgba(255,150,50,${pulse})`;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8 * pulse;
+    ctx.beginPath();
+    ctx.arc(lx, sy - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // "TRENCH" text — 3D extruded
+  ctx.font = "bold 36px monospace";
+  ctx.textAlign = "center";
+  // Extrusion layers
+  for (let d = 4; d > 0; d--) {
+    ctx.fillStyle = `rgb(${40 + d * 10}, ${25 + d * 5}, ${5 + d * 3})`;
+    ctx.fillText("TRENCH", sx + 120 + d, sy + 42 + d);
+  }
+  // Main text
+  const textGlow = Math.sin(t * 0.04) * 0.2 + 0.8;
+  ctx.fillStyle = `rgba(240,230,211,${textGlow})`;
+  ctx.shadowColor = "#ffe066";
+  ctx.shadowBlur = 12 * textGlow;
+  ctx.fillText("TRENCH", sx + 120, sy + 42);
+  ctx.shadowBlur = 0;
+
+  // Pickaxes on each side
+  const drawPickaxe = (px: number, py: number, flip: number) => {
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(flip, 1);
+    // Handle
+    ctx.strokeStyle = "#8B4513";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(20, -20);
+    ctx.stroke();
+    // Head
+    ctx.strokeStyle = "#b0b0b8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(15, -25);
+    ctx.lineTo(22, -18);
+    ctx.lineTo(25, -22);
+    ctx.stroke();
+    // Shine
+    ctx.strokeStyle = "#ddd";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(17, -23);
+    ctx.lineTo(21, -19);
+    ctx.stroke();
+    ctx.restore();
+  };
+  drawPickaxe(sx - 5, sy + 50, 1);
+  drawPickaxe(sx + 245, sy + 50, -1);
+}
+
 // Rendering
 export function render(ctx: CanvasRenderingContext2D, state: GameState, W: number, H: number) {
   // Target camera
@@ -470,6 +566,9 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+
+  // Billboard at surface
+  renderBillboard(ctx, state);
 
   // Player
   const playerSX = Math.floor(state.px * TILE - state.camX);
