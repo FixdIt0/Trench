@@ -618,34 +618,58 @@ export function spawnAmbientParticles(state: GameState) {
 }
 
 // Billboard
+// Preload logo image for billboard
+let logoImg: HTMLImageElement | null = null;
+const _img = new Image();
+_img.src = "/logo.png";
+_img.onload = () => { logoImg = _img; };
+
 function renderBillboard(ctx: CanvasRenderingContext2D, state: GameState) {
   const bx = Math.floor(WORLD_W / 2);
-  const by = -12; // high above surface
-  const W = 600, H = 160; // massive
+  const by = -12;
+  const W = 600, H = 160;
   const sx = Math.floor(bx * TILE - state.camX) - W / 2;
   const sy = Math.floor(by * TILE - state.camY);
-  const groundY = Math.floor(0 * TILE - state.camY); // y=0 is surface
+  const groundY = Math.floor(0 * TILE - state.camY);
 
   if (sy > ctx.canvas.height + 200 || sy < -500) return;
 
   const t = state.gameTime;
+  const postH = groundY - sy - H;
 
-  // Support posts — go all the way to ground
-  ctx.fillStyle = "#3d2510";
-  ctx.fillRect(sx + 40, sy + H, 14, groundY - sy - H);
-  ctx.fillRect(sx + W - 54, sy + H, 14, groundY - sy - H);
-  // Post highlights
+  // Post shadows (offset right+down)
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(sx + 46, sy + H + 4, 14, postH);
+  ctx.fillRect(sx + W - 48, sy + H + 4, 14, postH);
+
+  // 3D posts — left
+  ctx.fillStyle = "#2a1808";
+  ctx.fillRect(sx + 36, sy + H, 6, postH); // dark side
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx + 42, sy + H, 12, postH); // front
   ctx.fillStyle = "#5c3d2e";
-  ctx.fillRect(sx + 42, sy + H, 10, groundY - sy - H);
-  ctx.fillRect(sx + W - 52, sy + H, 10, groundY - sy - H);
+  ctx.fillRect(sx + 42, sy + H, 3, postH); // highlight edge
 
-  // 3D board — multiple depth layers
+  // 3D posts — right
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx + W - 54, sy + H, 12, postH);
+  ctx.fillStyle = "#2a1808";
+  ctx.fillRect(sx + W - 42, sy + H, 6, postH);
+  ctx.fillStyle = "#5c3d2e";
+  ctx.fillRect(sx + W - 54, sy + H, 3, postH);
+
+  // Board shadow
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.fillRect(sx + 8, sy + 8, W, H);
+
+  // 3D board depth
   for (let d = 8; d > 0; d--) {
     const shade = 10 + d * 4;
     ctx.fillStyle = `rgb(${shade}, ${Math.floor(shade * 0.6)}, ${Math.floor(shade * 0.2)})`;
     ctx.fillRect(sx + d, sy + d, W, H);
   }
-  // Front face
+
+  // Front face gradient
   const boardGrad = ctx.createLinearGradient(sx, sy, sx, sy + H);
   boardGrad.addColorStop(0, "#4a3015");
   boardGrad.addColorStop(0.5, "#3d2810");
@@ -653,7 +677,7 @@ function renderBillboard(ctx: CanvasRenderingContext2D, state: GameState) {
   ctx.fillStyle = boardGrad;
   ctx.fillRect(sx, sy, W, H);
 
-  // Gold border with corner bolts
+  // Gold double border
   ctx.strokeStyle = "#c8a84e";
   ctx.lineWidth = 3;
   ctx.strokeRect(sx, sy, W, H);
@@ -664,87 +688,55 @@ function renderBillboard(ctx: CanvasRenderingContext2D, state: GameState) {
   // Corner bolts
   for (const [cx, cy] of [[sx + 12, sy + 12], [sx + W - 12, sy + 12], [sx + 12, sy + H - 12], [sx + W - 12, sy + H - 12]]) {
     ctx.fillStyle = "#c8a84e";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#a08030";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
   }
 
-  // Bulb lights along top — more of them, bigger
+  // Backdrop lights behind logo — warm glow
+  const glowCx = sx + W / 2, glowCy = sy + H / 2;
+  const pulse = Math.sin(t * 0.04) * 0.1 + 0.9;
+  const glow = ctx.createRadialGradient(glowCx, glowCy, 0, glowCx, glowCy, W * 0.4);
+  glow.addColorStop(0, `rgba(255,200,80,${0.12 * pulse})`);
+  glow.addColorStop(0.5, `rgba(200,168,78,${0.05 * pulse})`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx, sy, W, H);
+
+  // Logo image — centered, fitted within board with padding
+  if (logoImg) {
+    const pad = 20;
+    const maxW = W - pad * 2, maxH = H - pad * 2;
+    const aspect = logoImg.width / logoImg.height;
+    let drawW = maxW, drawH = maxW / aspect;
+    if (drawH > maxH) { drawH = maxH; drawW = maxH * aspect; }
+    const lx = sx + (W - drawW) / 2;
+    const ly = sy + (H - drawH) / 2;
+    ctx.shadowColor = "#ffe066";
+    ctx.shadowBlur = 20 * pulse;
+    ctx.drawImage(logoImg, lx, ly, drawW, drawH);
+    ctx.shadowBlur = 0;
+  }
+
+  // Bulb lights along top
   for (let i = 0; i < 16; i++) {
     const lx = sx + 25 + i * (W - 50) / 15;
-    const pulse = Math.sin(t * 0.08 + i * 0.9) * 0.3 + 0.7;
+    const lPulse = Math.sin(t * 0.08 + i * 0.9) * 0.3 + 0.7;
     const colors = ["#ffdc64", "#ff9632", "#ff6464", "#64ff96"];
     const color = colors[i % 4];
     ctx.fillStyle = color;
-    ctx.globalAlpha = pulse;
+    ctx.globalAlpha = lPulse;
     ctx.shadowColor = color;
-    ctx.shadowBlur = 14 * pulse;
-    ctx.beginPath();
-    ctx.arc(lx, sy - 4, 5, 0, Math.PI * 2);
-    ctx.fill();
-    // Wire
+    ctx.shadowBlur = 14 * lPulse;
+    ctx.beginPath(); ctx.arc(lx, sy - 4, 5, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "#555";
     ctx.lineWidth = 1;
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(lx, sy - 4);
-    ctx.lineTo(lx, sy);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx, sy - 4); ctx.lineTo(lx, sy); ctx.stroke();
   }
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
-
-  // "TRENCH" text — huge, deep 3D extrusion
-  ctx.font = "bold 90px monospace";
-  ctx.textAlign = "center";
-  // Deep extrusion
-  for (let d = 10; d > 0; d--) {
-    const r = 30 + d * 6, g = 18 + d * 3, b = 5 + d * 2;
-    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-    ctx.fillText("TRENCH", sx + W / 2 + d, sy + H / 2 + 32 + d);
-  }
-  // Main text with glow
-  const textGlow = Math.sin(t * 0.04) * 0.15 + 0.85;
-  ctx.fillStyle = `rgba(240,230,211,${textGlow})`;
-  ctx.shadowColor = "#ffe066";
-  ctx.shadowBlur = 25 * textGlow;
-  ctx.fillText("TRENCH", sx + W / 2, sy + H / 2 + 32);
-  ctx.shadowBlur = 0;
-
-  // Pickaxes — bigger, on each side
-  const drawPickaxe = (px: number, py: number, flip: number) => {
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.scale(flip * 2, 2);
-    ctx.strokeStyle = "#8B4513";
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(22, -22);
-    ctx.stroke();
-    ctx.strokeStyle = "#b0b0b8";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(17, -27);
-    ctx.lineTo(24, -20);
-    ctx.lineTo(27, -24);
-    ctx.stroke();
-    ctx.strokeStyle = "#ddd";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(19, -25);
-    ctx.lineTo(23, -21);
-    ctx.stroke();
-    ctx.restore();
-  };
-  drawPickaxe(sx - 15, sy + H - 20, 1);
-  drawPickaxe(sx + W + 15, sy + H - 20, -1);
 }
 
 // Rendering
