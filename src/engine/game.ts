@@ -1,5 +1,5 @@
 import { TILE, TileType, getTile, getTileColor, isMineable, isLoot, getLootDrop, setTile, revealAround, getLayerBg, WORLD_W, type LootDrop } from "./world";
-import { fractalNoise, hashCoord } from "./noise";
+import { fractalNoise } from "./noise";
 
 export interface Particle {
   x: number; y: number; vx: number; vy: number;

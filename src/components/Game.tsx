@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
-import { revealAround, TILE, getTile, TileType, WORLD_W } from "../engine/world";
+import { revealAround, TILE, getTile, TileType } from "../engine/world";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
 
