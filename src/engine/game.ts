@@ -358,96 +358,132 @@ export function spawnAmbientParticles(state: GameState) {
 
 // Billboard
 function renderBillboard(ctx: CanvasRenderingContext2D, state: GameState) {
-  const bx = Math.floor(WORLD_W / 2); // center of world
-  const by = -8; // above surface
-  const sx = Math.floor(bx * TILE - state.camX) - 120;
+  const bx = Math.floor(WORLD_W / 2);
+  const by = -12; // high above surface
+  const W = 600, H = 160; // massive
+  const sx = Math.floor(bx * TILE - state.camX) - W / 2;
   const sy = Math.floor(by * TILE - state.camY);
+  const groundY = Math.floor(0 * TILE - state.camY); // y=0 is surface
 
-  // Only render if somewhat on screen
-  if (sy > ctx.canvas.height + 100 || sy < -300) return;
+  if (sy > ctx.canvas.height + 200 || sy < -500) return;
 
   const t = state.gameTime;
 
-  // Support posts
+  // Support posts — go all the way to ground
+  ctx.fillStyle = "#3d2510";
+  ctx.fillRect(sx + 40, sy + H, 14, groundY - sy - H);
+  ctx.fillRect(sx + W - 54, sy + H, 14, groundY - sy - H);
+  // Post highlights
   ctx.fillStyle = "#5c3d2e";
-  ctx.fillRect(sx + 20, sy + 60, 8, 80);
-  ctx.fillRect(sx + 212, sy + 60, 8, 80);
+  ctx.fillRect(sx + 42, sy + H, 10, groundY - sy - H);
+  ctx.fillRect(sx + W - 52, sy + H, 10, groundY - sy - H);
 
-  // Board background with 3D depth
-  ctx.fillStyle = "#1a1008";
-  ctx.fillRect(sx + 6, sy + 6, 240, 64); // shadow
-  ctx.fillStyle = "#2a1a0a";
-  ctx.fillRect(sx + 3, sy + 3, 240, 64); // mid
-  ctx.fillStyle = "#3d2810";
-  ctx.fillRect(sx, sy, 240, 64); // front
+  // 3D board — multiple depth layers
+  for (let d = 8; d > 0; d--) {
+    const shade = 10 + d * 4;
+    ctx.fillStyle = `rgb(${shade}, ${Math.floor(shade * 0.6)}, ${Math.floor(shade * 0.2)})`;
+    ctx.fillRect(sx + d, sy + d, W, H);
+  }
+  // Front face
+  const boardGrad = ctx.createLinearGradient(sx, sy, sx, sy + H);
+  boardGrad.addColorStop(0, "#4a3015");
+  boardGrad.addColorStop(0.5, "#3d2810");
+  boardGrad.addColorStop(1, "#2a1a08");
+  ctx.fillStyle = boardGrad;
+  ctx.fillRect(sx, sy, W, H);
 
-  // Border
+  // Gold border with corner bolts
   ctx.strokeStyle = "#c8a84e";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(sx, sy, 240, 64);
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sx, sy, W, H);
+  ctx.strokeStyle = "#a08030";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx + 6, sy + 6, W - 12, H - 12);
 
-  // Bulb lights along top
-  for (let i = 0; i < 8; i++) {
-    const lx = sx + 18 + i * 30;
-    const pulse = Math.sin(t * 0.08 + i * 1.2) * 0.3 + 0.7;
-    const color = i % 2 === 0 ? `rgba(255,220,100,${pulse})` : `rgba(255,150,50,${pulse})`;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8 * pulse;
+  // Corner bolts
+  for (const [cx, cy] of [[sx + 12, sy + 12], [sx + W - 12, sy + 12], [sx + 12, sy + H - 12], [sx + W - 12, sy + H - 12]]) {
+    ctx.fillStyle = "#c8a84e";
     ctx.beginPath();
-    ctx.arc(lx, sy - 2, 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#a08030";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.shadowBlur = 0;
 
-  // "TRENCH" text — 3D extruded
-  ctx.font = "bold 36px monospace";
-  ctx.textAlign = "center";
-  // Extrusion layers
-  for (let d = 4; d > 0; d--) {
-    ctx.fillStyle = `rgb(${40 + d * 10}, ${25 + d * 5}, ${5 + d * 3})`;
-    ctx.fillText("TRENCH", sx + 120 + d, sy + 42 + d);
+  // Bulb lights along top — more of them, bigger
+  for (let i = 0; i < 16; i++) {
+    const lx = sx + 25 + i * (W - 50) / 15;
+    const pulse = Math.sin(t * 0.08 + i * 0.9) * 0.3 + 0.7;
+    const colors = ["#ffdc64", "#ff9632", "#ff6464", "#64ff96"];
+    const color = colors[i % 4];
+    ctx.fillStyle = color;
+    ctx.globalAlpha = pulse;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14 * pulse;
+    ctx.beginPath();
+    ctx.arc(lx, sy - 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Wire
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 1;
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(lx, sy - 4);
+    ctx.lineTo(lx, sy);
+    ctx.stroke();
   }
-  // Main text
-  const textGlow = Math.sin(t * 0.04) * 0.2 + 0.8;
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // "TRENCH" text — huge, deep 3D extrusion
+  ctx.font = "bold 90px monospace";
+  ctx.textAlign = "center";
+  // Deep extrusion
+  for (let d = 10; d > 0; d--) {
+    const r = 30 + d * 6, g = 18 + d * 3, b = 5 + d * 2;
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.fillText("TRENCH", sx + W / 2 + d, sy + H / 2 + 32 + d);
+  }
+  // Main text with glow
+  const textGlow = Math.sin(t * 0.04) * 0.15 + 0.85;
   ctx.fillStyle = `rgba(240,230,211,${textGlow})`;
   ctx.shadowColor = "#ffe066";
-  ctx.shadowBlur = 12 * textGlow;
-  ctx.fillText("TRENCH", sx + 120, sy + 42);
+  ctx.shadowBlur = 25 * textGlow;
+  ctx.fillText("TRENCH", sx + W / 2, sy + H / 2 + 32);
   ctx.shadowBlur = 0;
 
-  // Pickaxes on each side
+  // Pickaxes — bigger, on each side
   const drawPickaxe = (px: number, py: number, flip: number) => {
     ctx.save();
     ctx.translate(px, py);
-    ctx.scale(flip, 1);
-    // Handle
+    ctx.scale(flip * 2, 2);
     ctx.strokeStyle = "#8B4513";
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(20, -20);
+    ctx.lineTo(22, -22);
     ctx.stroke();
-    // Head
     ctx.strokeStyle = "#b0b0b8";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(15, -25);
-    ctx.lineTo(22, -18);
-    ctx.lineTo(25, -22);
+    ctx.moveTo(17, -27);
+    ctx.lineTo(24, -20);
+    ctx.lineTo(27, -24);
     ctx.stroke();
-    // Shine
     ctx.strokeStyle = "#ddd";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(17, -23);
-    ctx.lineTo(21, -19);
+    ctx.moveTo(19, -25);
+    ctx.lineTo(23, -21);
     ctx.stroke();
     ctx.restore();
   };
-  drawPickaxe(sx - 5, sy + 50, 1);
-  drawPickaxe(sx + 245, sy + 50, -1);
+  drawPickaxe(sx - 15, sy + H - 20, 1);
+  drawPickaxe(sx + W + 15, sy + H - 20, -1);
 }
 
 // Rendering
