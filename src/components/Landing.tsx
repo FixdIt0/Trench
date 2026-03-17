@@ -37,6 +37,50 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
 
   const handleEnter = () => setEntering(true);
 
+  // Flickering lantern cursor
+  const lanternRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (entering) return;
+    const lc = lanternRef.current;
+    if (!lc) return;
+    const lctx = lc.getContext("2d")!;
+    let mx = -100, my = -100, af = 0;
+    const onMove = (e: MouseEvent) => { mx = e.clientX; my = e.clientY; };
+    window.addEventListener("mousemove", onMove);
+    const draw = () => {
+      af++;
+      lc.width = window.innerWidth;
+      lc.height = window.innerHeight;
+      lctx.clearRect(0, 0, lc.width, lc.height);
+      if (mx < 0) { requestAnimationFrame(draw); return; }
+      const flicker = 0.8 + Math.sin(af * 0.15) * 0.1 + Math.sin(af * 0.37) * 0.1;
+      const r = 90 * flicker;
+      // Glow
+      const g = lctx.createRadialGradient(mx, my, 0, mx, my, r);
+      g.addColorStop(0, `rgba(255,180,60,${0.12 * flicker})`);
+      g.addColorStop(0.5, `rgba(255,140,30,${0.05 * flicker})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      lctx.fillStyle = g;
+      lctx.beginPath(); lctx.arc(mx, my, r, 0, Math.PI * 2); lctx.fill();
+      // Lantern body
+      lctx.fillStyle = "#8a6a30";
+      lctx.fillRect(mx - 3, my - 2, 6, 10);
+      // Handle
+      lctx.strokeStyle = "#6a5020";
+      lctx.lineWidth = 1.5;
+      lctx.beginPath(); lctx.arc(mx, my - 5, 4, Math.PI, 0); lctx.stroke();
+      // Flame
+      const fh = (4 + Math.sin(af * 0.2) * 1.5) * flicker;
+      lctx.fillStyle = `rgba(255,200,60,${0.9 * flicker})`;
+      lctx.beginPath(); lctx.ellipse(mx, my - 1 - fh * 0.3, 2, fh, 0, 0, Math.PI * 2); lctx.fill();
+      lctx.fillStyle = `rgba(255,240,150,${0.7 * flicker})`;
+      lctx.beginPath(); lctx.ellipse(mx, my - 1 - fh * 0.2, 1, fh * 0.5, 0, 0, Math.PI * 2); lctx.fill();
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [entering]);
+
   if (entering) {
     return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, background: "#000", zIndex: 100 }} />;
   }
@@ -45,7 +89,10 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
     <div style={{
       position: "fixed", inset: 0, background: "#060608", overflow: "hidden",
       fontFamily: "'Georgia', 'Times New Roman', serif",
+      cursor: "none",
     }}>
+      {/* Lantern cursor overlay */}
+      <canvas ref={lanternRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 50 }} />
       {/* Animated dust particles */}
       {particles.map((p, i) => {
         const y = (p.y + frame * p.speed) % 110 - 5;
