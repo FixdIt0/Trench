@@ -13,7 +13,9 @@ export enum TileType {
   // Special
   Water, Moss, Mushroom,
   // Powerups
-  Dynamite, SpeedPotion, Shield, Magnet
+  Dynamite, SpeedPotion, Shield, Magnet,
+  // Traps
+  SpikeTrap, BoulderTrap
 }
 
 export interface Tile { type: TileType; revealed: boolean; hp: number; glow?: number; lootValue?: number; }
@@ -46,6 +48,8 @@ const LAYER_COLORS: Record<TileType, string> = {
   [TileType.SpeedPotion]: "#33ffaa",
   [TileType.Shield]: "#4488ff",
   [TileType.Magnet]: "#ff8800",
+  [TileType.SpikeTrap]: "#8a8a8a",
+  [TileType.BoulderTrap]: "#6b5b4b",
 };
 
 const TILE_HP: Partial<Record<TileType, number>> = {
@@ -56,6 +60,7 @@ const TILE_HP: Partial<Record<TileType, number>> = {
   [TileType.Amethyst]: 6, [TileType.Chest]: 5, [TileType.Artifact]: 12,
   [TileType.Moss]: 1, [TileType.Mushroom]: 1, [TileType.Bedrock]: 999,
   [TileType.Dynamite]: 1, [TileType.SpeedPotion]: 1, [TileType.Shield]: 1, [TileType.Magnet]: 1,
+  [TileType.SpikeTrap]: 1, [TileType.BoulderTrap]: 3,
 };
 
 export function getTileColor(type: TileType): string {
@@ -67,7 +72,7 @@ export function getTileHP(type: TileType): number {
 }
 
 export function isMineable(type: TileType): boolean {
-  return type !== TileType.Air && type !== TileType.Lava && type !== TileType.Water && type !== TileType.Bedrock;
+  return type !== TileType.Air && type !== TileType.Lava && type !== TileType.Water && type !== TileType.Bedrock && type !== TileType.SpikeTrap;
 }
 
 export function isLoot(type: TileType): boolean {
@@ -170,15 +175,57 @@ export function generateTile(x: number, y: number): Tile {
     }
   }
 
-  // Ore placement
+  // Ore placement — vein-based: use noise to cluster same ore
   const oreRng = hashCoord(x, y, SEED + 100);
+  const veinNoise = fractalNoise(x * 2, y * 2, SEED + 150, 2, 10);
   const ore = getOreType(depth, oreRng);
   if (ore) {
+    // Veins: if nearby noise is high, boost chance of same ore in cluster
     const glow = ore === TileType.Diamond ? 0.6 : ore === TileType.Ruby ? 0.4 :
       ore === TileType.Emerald ? 0.4 : ore === TileType.Gold ? 0.3 :
       ore === TileType.Amethyst ? 0.35 : ore === TileType.Chest ? 0.5 :
       ore === TileType.Artifact ? 0.8 : 0;
     return { type: ore, revealed: false, hp: getTileHP(ore), glow };
+  }
+  // Vein extension: if no ore rolled but vein noise is high, check neighbors conceptually
+  if (veinNoise > 0.7 && depth > 15) {
+    const neighborOre = getOreType(depth, hashCoord(x + 1, y, SEED + 100)) ||
+      getOreType(depth, hashCoord(x - 1, y, SEED + 100)) ||
+      getOreType(depth, hashCoord(x, y + 1, SEED + 100)) ||
+      getOreType(depth, hashCoord(x, y - 1, SEED + 100));
+    if (neighborOre) {
+      const glow = neighborOre === TileType.Diamond ? 0.6 : neighborOre === TileType.Gold ? 0.3 : 0.2;
+      return { type: neighborOre, revealed: false, hp: getTileHP(neighborOre), glow };
+    }
+  }
+
+  // Traps in deeper layers
+  if (depth > 50) {
+    const trapRng = hashCoord(x, y, SEED + 800);
+    if (depth > 100 && trapRng < 0.008) return { type: TileType.SpikeTrap, revealed: false, hp: 1, glow: 0.15 };
+    if (depth > 70 && trapRng > 0.008 && trapRng < 0.014) return { type: TileType.BoulderTrap, revealed: false, hp: 3, glow: 0.1 };
+  }
+
+  // Underground structures — mineshafts (horizontal tunnels)
+  const shaftNoise = fractalNoise(x * 0.5, y * 0.5, SEED + 900, 1, 40);
+  if (depth > 30 && depth < 250 && shaftNoise > 0.78) {
+    // Horizontal shaft: thin band
+    const shaftY = Math.floor(y / 20) * 20 + 10;
+    if (Math.abs(y - shaftY) <= 1 && hashCoord(x, shaftY, SEED + 901) < 0.4) {
+      return { type: TileType.Air, revealed: false, hp: 0 };
+    }
+  }
+  // Treasure rooms — rare large open spaces with loot
+  const roomNoise = hashCoord(Math.floor(x / 8), Math.floor(y / 8), SEED + 950);
+  if (depth > 80 && roomNoise < 0.005) {
+    const rx = x % 8, ry = y % 8;
+    if (rx >= 1 && rx <= 6 && ry >= 1 && ry <= 6) {
+      // Walls have chests
+      if (rx === 1 || rx === 6 || ry === 1 || ry === 6) {
+        if (hashCoord(x, y, SEED + 951) < 0.3) return { type: TileType.Chest, revealed: false, hp: 5, glow: 0.5 };
+      }
+      return { type: TileType.Air, revealed: false, hp: 0 };
+    }
   }
 
   const base = getBaseType(depth);

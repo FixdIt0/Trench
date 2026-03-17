@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, applyGravity, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
-import { revealAround, TILE } from "../engine/world";
+import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
+import { revealAround, TILE, getTile, TileType, WORLD_W } from "../engine/world";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
 
@@ -113,6 +113,7 @@ function BuffBar({ label, value, max, color }: { label: string; value: number; m
 
 export default function Game({ walletAddr }: { walletAddr?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const minimapRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<GameState>(createGameState());
   const keysRef = useRef<Set<string>>(new Set());
   const [depth, setDepth] = useState(0);
@@ -123,7 +124,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   const [showShop, setShowShop] = useState(false);
   const [light, setLight] = useState(6);
   const [hp, setHp] = useState(10);
-  const [falling, setFalling] = useState(false);
+  const [invincible, setInvincible] = useState(0);
   const [buffs, setBuffs] = useState<Buffs>({ speed: 0, shield: 0, magnet: 0 });
   const [upgrades, setUpgrades] = useState<Upgrades>({ pickaxe: 0, sword: 0, lamp: 0, armor: 0 });
   const [showLB, setShowLB] = useState(false);
@@ -175,12 +176,10 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       const keys = keysRef.current;
       tickRef.current++;
 
-      // Gravity: tick every 4 frames for visible fall
-      if (tickRef.current % 4 === 0) {
-        applyGravity(s);
-      }
+      // AI update every 2 frames
+      if (tickRef.current % 2 === 0) updateAI(s);
 
-      // Movement always allowed, digging only when not falling
+      // Movement — every 15 frames (~4/sec)
       if (tickRef.current % 15 === 0) {
         let dx = 0, dy = 0;
         if (keys.has("a") || keys.has("arrowleft")) dx = -1;
@@ -189,11 +188,11 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         else if (keys.has("w") || keys.has("arrowup")) dy = -1;
 
         if (dx !== 0 || dy !== 0) {
-          if (!tryMove(s, dx, dy) && !s.falling) tryDig(s, dx, dy);
+          if (!tryMove(s, dx, dy)) tryDig(s, dx, dy);
         }
 
         if (keys.has(" ")) {
-          if (!tryMove(s, 0, 1) && !s.falling) tryDig(s, 0, 1);
+          if (!tryMove(s, 0, 1)) tryDig(s, 0, 1);
         }
 
         if (s.lightRadius > s.baseLightRadius) s.lightRadius = Math.max(s.baseLightRadius, s.lightRadius - 0.01);
@@ -202,7 +201,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       setDepth(s.maxDepth);
       setBalance(s.balance);
       setHp(s.hp);
-      setFalling(s.falling);
+      setInvincible(s.invincible);
       setInventory([...s.inventory.values()]);
       setLight(s.lightRadius);
       setBuffs({ ...s.buffs });
@@ -210,7 +209,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
 
       // Send position to server every 10 frames
       if (tickRef.current % 10 === 0) {
-        sendMove(s.px, s.py, s.hp, s.falling, s.upgrades.sword, s.totalEarned, s.maxDepth);
+        sendMove(s.px, s.py, s.hp, false, s.upgrades.sword, s.totalEarned, s.maxDepth);
       }
 
       updateParticles(s);
@@ -219,6 +218,41 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
 
       // Render other players
       renderOtherPlayers(ctx, s, otherPlayersRef.current);
+
+      // Minimap
+      const mc = minimapRef.current;
+      if (mc && tickRef.current % 10 === 0) {
+        const mctx = mc.getContext("2d")!;
+        mctx.fillStyle = "#0a0a12";
+        mctx.fillRect(0, 0, 120, 120);
+        const mR = 30; // tiles radius
+        for (let dy = -mR; dy <= mR; dy++) {
+          for (let dx = -mR; dx <= mR; dx++) {
+            const tx = s.px + dx, ty = s.py + dy;
+            const t = getTile(tx, ty);
+            if (!t.revealed) continue;
+            const mx = 60 + dx * 2, my = 60 + dy * 2;
+            if (mx < 0 || mx >= 120 || my < 0 || my >= 120) continue;
+            if (t.type === TileType.Air) { mctx.fillStyle = "#111"; }
+            else if (t.type === TileType.Lava) { mctx.fillStyle = "#ff4500"; }
+            else if (t.type === TileType.Water) { mctx.fillStyle = "#1a5276"; }
+            else if (t.type === TileType.SpikeTrap) { mctx.fillStyle = "#888"; }
+            else { mctx.fillStyle = "#333"; }
+            mctx.fillRect(mx, my, 2, 2);
+          }
+        }
+        // Player dot
+        mctx.fillStyle = "#ffd700";
+        mctx.fillRect(59, 59, 3, 3);
+        // AI entities
+        for (const e of s.aiEntities) {
+          if (e.dead) continue;
+          const edx = e.x - s.px, edy = e.y - s.py;
+          if (Math.abs(edx) > mR || Math.abs(edy) > mR) continue;
+          mctx.fillStyle = e.type === "fighter" ? "#ff4444" : e.type === "miner" ? "#4488ff" : "#44cc44";
+          mctx.fillRect(60 + edx * 2, 60 + edy * 2, 2, 2);
+        }
+      }
 
       raf = requestAnimationFrame(loop);
     };
@@ -233,7 +267,9 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
     const dx = worldX - s.px, dy = worldY - s.py;
     const adx = Math.abs(dx), ady = Math.abs(dy);
     if ((adx + ady === 1) && adx <= 1 && ady <= 1) {
-      // Check if there's a player at that tile to attack
+      // Attack AI entity?
+      if (attackAI(s, worldX, worldY)) return;
+      // Attack other player?
       if (s.upgrades.sword > 0) {
         const target = otherPlayersRef.current.find(p => p.x === worldX && p.y === worldY);
         if (target) { sendAttack(target.id); return; }
@@ -268,8 +304,8 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         </div>
         {/* HP bar */}
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 12, color: falling ? "#ff4444" : "#888", marginBottom: 3 }}>
-            {falling ? "⚠ FALLING!" : "HP"} {hp.toFixed(1)}/{10}
+          <div style={{ fontSize: 12, color: invincible > 0 ? "#4488ff" : "#888", marginBottom: 3 }}>
+            {invincible > 0 ? "🛡️ INVINCIBLE" : "HP"} {hp.toFixed(1)}/{10}
           </div>
           <div style={{ width: 120, height: 8, background: "#1a1a2e", borderRadius: 4, overflow: "hidden" }}>
             <div style={{
@@ -356,8 +392,19 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         ⛏️ SHOP
       </button>
 
+      {/* Minimap */}
+      <canvas
+        ref={minimapRef}
+        width={120} height={120}
+        style={{
+          position: "absolute", bottom: 50, left: 16,
+          border: "1px solid #333", borderRadius: 6,
+          background: "rgba(0,0,0,0.8)", imageRendering: "pixelated",
+        }}
+      />
+
       {/* Controls hint */}
-      <div style={{ position: "absolute", bottom: 16, left: 16, color: "#555", fontFamily: "monospace", fontSize: 12, pointerEvents: "none" }}>
+      <div style={{ position: "absolute", bottom: 16, left: 150, color: "#555", fontFamily: "monospace", fontSize: 12, pointerEvents: "none" }}>
         WASD to move & dig · Space to dig down · Click adjacent tiles · Tab inventory · E shop
       </div>
 

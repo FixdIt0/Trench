@@ -1,5 +1,5 @@
 import { TILE, TileType, getTile, getTileColor, isMineable, isLoot, getLootDrop, setTile, revealAround, getLayerBg, WORLD_W, type LootDrop } from "./world";
-import { fractalNoise } from "./noise";
+import { fractalNoise, hashCoord } from "./noise";
 
 export interface Particle {
   x: number; y: number; vx: number; vy: number;
@@ -13,9 +13,22 @@ export interface FloatingText {
 export interface InventoryItem { name: string; count: number; color: string; rarity: string; value: number; }
 
 export interface Buffs {
-  speed: number;   // ticks remaining for 2x dig power
-  shield: number;  // ticks remaining for lava immunity
-  magnet: number;  // ticks remaining for ore reveal
+  speed: number;
+  shield: number;
+  magnet: number;
+}
+
+// AI Entities
+export interface AIEntity {
+  id: string;
+  x: number; y: number;
+  type: "miner" | "fighter" | "bat" | "slime" | "spider";
+  hp: number; maxHp: number;
+  name: string;
+  dir: { dx: number; dy: number };
+  cooldown: number; // ticks until next action
+  swordTier: number;
+  dead: boolean;
 }
 
 export interface GameState {
@@ -29,18 +42,19 @@ export interface GameState {
   maxDepth: number;
   hp: number;
   maxHp: number;
-  falling: boolean;
-  fallCount: number;
   digPower: number;
   lightRadius: number;
   baseLightRadius: number;
   digging: { x: number; y: number; progress: number; maxHp: number } | null;
   swing: { angle: number; timer: number; dirX: number; dirY: number };
-  movedUpThisTick: boolean;
   buffs: Buffs;
   upgrades: Upgrades;
   gameTime: number;
   ambientParticles: Particle[];
+  aiEntities: AIEntity[];
+  shakeTimer: number;
+  shakeIntensity: number;
+  invincible: number; // ticks of respawn invincibility
 }
 
 export interface Upgrade {
@@ -97,19 +111,50 @@ export function buyUpgrade(state: GameState, key: keyof Upgrades): boolean {
   return true;
 }
 
+// Random wallet-like names for AI
+const AI_NAMES = ["0xDe4d..b33f","0xCa5h..m1n3","0xG0ld..d1g","0xR0ck..br3k","0xD33p..m1n0","0xOr3s..hunt","0xP1ck..axe1","0xD1am..0nd5","0xRuby..f1nd","0xCav3..cr4w","0xSw0r..d99","0xBl4d..3xx","0xSl4y..3r01","0xH4ck..sl4h"];
+
+function spawnAIEntities(): AIEntity[] {
+  const entities: AIEntity[] = [];
+  // Miners scattered underground
+  for (let i = 0; i < 8; i++) {
+    const x = 20 + Math.floor(Math.random() * (WORLD_W - 40));
+    const y = 5 + Math.floor(Math.random() * 120);
+    entities.push({ id: `miner-${i}`, x, y, type: "miner", hp: 10, maxHp: 10, name: AI_NAMES[i % AI_NAMES.length], dir: { dx: 0, dy: 1 }, cooldown: 0, swordTier: 0, dead: false });
+  }
+  // Sword fighters
+  for (let i = 0; i < 4; i++) {
+    const x = 30 + Math.floor(Math.random() * (WORLD_W - 60));
+    const y = 20 + Math.floor(Math.random() * 100);
+    entities.push({ id: `fighter-${i}`, x, y, type: "fighter", hp: 15, maxHp: 15, name: AI_NAMES[(i + 8) % AI_NAMES.length], dir: { dx: 1, dy: 0 }, cooldown: 0, swordTier: 1 + (i % 3), dead: false });
+  }
+  // Mobs
+  for (let i = 0; i < 6; i++) {
+    const types: ("bat" | "slime" | "spider")[] = ["bat", "slime", "spider"];
+    const t = types[i % 3];
+    const x = 10 + Math.floor(Math.random() * (WORLD_W - 20));
+    const y = t === "bat" ? 15 + Math.floor(Math.random() * 80) : 40 + Math.floor(Math.random() * 150);
+    const mobHp = t === "bat" ? 3 : t === "slime" ? 5 : 8;
+    entities.push({ id: `mob-${i}`, x, y, type: t, hp: mobHp, maxHp: mobHp, name: t.toUpperCase(), dir: { dx: 0, dy: 0 }, cooldown: 0, swordTier: 0, dead: false });
+  }
+  return entities;
+}
+
 export function createGameState(): GameState {
   return {
     px: Math.floor(WORLD_W / 2), py: -1,
     camX: Math.floor(WORLD_W / 2) * TILE, camY: -TILE,
     particles: [], floatingTexts: [],
     inventory: new Map(), balance: 0, totalEarned: 0, maxDepth: 0,
-    hp: 10, maxHp: 10, falling: false, fallCount: 0,
+    hp: 10, maxHp: 10,
     digPower: 1, lightRadius: 6, baseLightRadius: 6, digging: null,
     swing: { angle: 0, timer: 0, dirX: 1, dirY: 1 },
-    movedUpThisTick: false,
     buffs: { speed: 0, shield: 0, magnet: 0 },
     upgrades: { pickaxe: 0, sword: 0, lamp: 0, armor: 0 },
     gameTime: 0, ambientParticles: [],
+    aiEntities: spawnAIEntities(),
+    shakeTimer: 0, shakeIntensity: 0,
+    invincible: 0,
   };
 }
 
@@ -154,9 +199,25 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   if (nx < 0 || nx >= WORLD_W) return false;
   const tile = getTile(nx, ny);
   const walkable = tile.type === TileType.Air || tile.type === TileType.Water ||
+    tile.type === TileType.Lava || tile.type === TileType.SpikeTrap ||
     tile.type === TileType.Mushroom || tile.type === TileType.Dynamite ||
     tile.type === TileType.SpeedPotion || tile.type === TileType.Shield || tile.type === TileType.Magnet;
   if (!walkable) return false;
+
+  // Lava damage
+  if (tile.type === TileType.Lava && state.buffs.shield <= 0) {
+    state.hp = Math.round((state.hp - 2) * 100) / 100;
+    addFloatingText(state, nx, ny, "-2 HP LAVA!", "#ff4500");
+    if (state.hp <= 0) { killPlayer(state); return false; }
+  }
+
+  // Spike trap damage
+  if (tile.type === TileType.SpikeTrap) {
+    state.hp = Math.round((state.hp - 1.5) * 100) / 100;
+    addFloatingText(state, nx, ny, "-1.5 SPIKE!", "#8a8a8a");
+    state.shakeTimer = 8; state.shakeIntensity = 3;
+    if (state.hp <= 0) { killPlayer(state); return false; }
+  }
 
   // Pickup powerups
   if (tile.type === TileType.Mushroom) {
@@ -165,11 +226,12 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
     state.lightRadius = Math.min(12, state.lightRadius + 1.5);
   } else if (tile.type === TileType.Dynamite) {
     addFloatingText(state, nx, ny, "BOOM!", "#ff3333");
+    state.shakeTimer = 15; state.shakeIntensity = 8;
     blastRadius(state, nx, ny, 3);
   } else if (tile.type === TileType.SpeedPotion) {
     addFloatingText(state, nx, ny, "2x Dig Speed!", "#33ffaa");
     spawnLootParticles(state, nx, ny, "#33ffaa");
-    state.buffs.speed = Math.min(600, state.buffs.speed + 300); // ~10 sec
+    state.buffs.speed = Math.min(600, state.buffs.speed + 300);
   } else if (tile.type === TileType.Shield) {
     addFloatingText(state, nx, ny, "Lava Shield!", "#4488ff");
     spawnLootParticles(state, nx, ny, "#4488ff");
@@ -180,12 +242,11 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
     state.buffs.magnet = Math.min(600, state.buffs.magnet + 300);
     revealOresNearby(state, nx, ny, 8);
   }
-  if (tile.type !== TileType.Air && tile.type !== TileType.Water) {
+  if (tile.type !== TileType.Air && tile.type !== TileType.Water && tile.type !== TileType.Lava && tile.type !== TileType.SpikeTrap) {
     setTile(nx, ny, { type: TileType.Air, revealed: true, hp: 0 });
   }
 
   state.px = nx; state.py = ny;
-  if (dy < 0) state.movedUpThisTick = true;
   if (ny > state.maxDepth) state.maxDepth = ny;
   revealAround(nx, ny, state.lightRadius);
   return true;
@@ -289,39 +350,153 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
   return false;
 }
 
-// Tick-based gravity: call each frame, moves 1 tile per call
-export function applyGravity(state: GameState): boolean {
-  if (state.movedUpThisTick) { state.movedUpThisTick = false; return false; }
-  const below = getTile(state.px, state.py + 1);
-  if (below.type === TileType.Air || below.type === TileType.Water) {
-    state.py++;
-    state.falling = true;
-    state.fallCount++;
-    if (state.py > state.maxDepth) state.maxDepth = state.py;
-    revealAround(state.px, state.py, state.lightRadius);
-    // Fall damage: 0.1 per block
-    state.hp = Math.round((state.hp - 0.1) * 100) / 100;
-    if (state.hp <= 0) respawn(state);
-    return true; // still falling
-  }
-  // Landed
-  if (state.falling) {
-    state.falling = false;
-    if (state.fallCount > 3) addFloatingText(state, state.px, state.py, `-${(state.fallCount * 0.1).toFixed(1)} HP`, "#ff4444");
-    state.fallCount = 0;
-  }
-  return false;
+// Death: lose 20% balance, respawn with invincibility
+export function killPlayer(state: GameState) {
+  const lost = Math.floor(state.balance * 0.2);
+  state.balance -= lost;
+  if (lost > 0) addFloatingText(state, state.px, state.py, `-${lost} balance!`, "#ff4444");
+  respawn(state);
 }
 
 export function respawn(state: GameState) {
   state.px = Math.floor(WORLD_W / 2);
   state.py = -1;
   state.hp = state.maxHp;
-  state.falling = false;
-  state.fallCount = 0;
   state.digging = null;
+  state.invincible = 180; // 3 sec at 60fps
   addFloatingText(state, state.px, state.py, "Respawned!", "#ff6666");
   revealAround(state.px, state.py, state.lightRadius);
+}
+
+// AI entity update — called every ~20 ticks
+const DIRS = [{ dx: 0, dy: 1 }, { dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }];
+
+export function updateAI(state: GameState) {
+  for (const e of state.aiEntities) {
+    if (e.dead) continue;
+    if (e.cooldown > 0) { e.cooldown--; continue; }
+
+    const distToPlayer = Math.abs(e.x - state.px) + Math.abs(e.y - state.py);
+
+    if (e.type === "miner") {
+      // Miners wander and dig
+      if (Math.random() < 0.3) e.dir = DIRS[Math.floor(Math.random() * 4)];
+      const nx = e.x + e.dir.dx, ny = e.y + e.dir.dy;
+      if (nx >= 0 && nx < WORLD_W && ny >= -5) {
+        const t = getTile(nx, ny);
+        if (t.type === TileType.Air || t.type === TileType.Water) {
+          e.x = nx; e.y = ny;
+        } else if (isMineable(t.type)) {
+          setTile(nx, ny, { type: TileType.Air, revealed: true, hp: 0 });
+          spawnDigParticles(state, nx, ny, getTileColor(t.type));
+          e.x = nx; e.y = ny;
+        }
+      }
+      e.cooldown = 12 + Math.floor(Math.random() * 8);
+    } else if (e.type === "fighter") {
+      // Fighters chase player if close, otherwise wander
+      if (distToPlayer < 15 && distToPlayer > 1) {
+        const ddx = state.px > e.x ? 1 : state.px < e.x ? -1 : 0;
+        const ddy = state.py > e.y ? 1 : state.py < e.y ? -1 : 0;
+        e.dir = Math.abs(state.px - e.x) > Math.abs(state.py - e.y) ? { dx: ddx, dy: 0 } : { dx: 0, dy: ddy };
+      } else if (Math.random() < 0.4) {
+        e.dir = DIRS[Math.floor(Math.random() * 4)];
+      }
+      // Attack player if adjacent
+      if (distToPlayer === 1 && state.invincible <= 0) {
+        const dmg = e.swordTier;
+        state.hp = Math.round((state.hp - dmg) * 100) / 100;
+        addFloatingText(state, state.px, state.py, `-${dmg} HP`, "#ff4444");
+        state.shakeTimer = 6; state.shakeIntensity = 4;
+        if (state.hp <= 0) killPlayer(state);
+        e.cooldown = 30;
+        continue;
+      }
+      const nx = e.x + e.dir.dx, ny = e.y + e.dir.dy;
+      if (nx >= 0 && nx < WORLD_W && ny >= -5) {
+        const t = getTile(nx, ny);
+        if (t.type === TileType.Air || t.type === TileType.Water) { e.x = nx; e.y = ny; }
+        else if (isMineable(t.type)) { setTile(nx, ny, { type: TileType.Air, revealed: true, hp: 0 }); e.x = nx; e.y = ny; }
+      }
+      e.cooldown = 8 + Math.floor(Math.random() * 6);
+    } else {
+      // Mobs: bats fly erratically, slimes hop, spiders chase
+      if (e.type === "bat") {
+        e.dir = DIRS[Math.floor(Math.random() * 4)];
+        const nx = e.x + e.dir.dx, ny = e.y + e.dir.dy;
+        if (nx >= 0 && nx < WORLD_W) {
+          const t = getTile(nx, ny);
+          if (t.type === TileType.Air || t.type === TileType.Water) { e.x = nx; e.y = ny; }
+        }
+        if (distToPlayer === 1 && state.invincible <= 0) {
+          state.hp = Math.round((state.hp - 0.5) * 100) / 100;
+          addFloatingText(state, state.px, state.py, "-0.5 BAT!", "#884488");
+          if (state.hp <= 0) killPlayer(state);
+        }
+        e.cooldown = 4 + Math.floor(Math.random() * 4);
+      } else if (e.type === "slime") {
+        if (distToPlayer < 10) {
+          const ddx = state.px > e.x ? 1 : state.px < e.x ? -1 : 0;
+          const ddy = state.py > e.y ? 1 : state.py < e.y ? -1 : 0;
+          e.dir = Math.random() < 0.5 ? { dx: ddx, dy: 0 } : { dx: 0, dy: ddy };
+        } else {
+          e.dir = DIRS[Math.floor(Math.random() * 4)];
+        }
+        const nx = e.x + e.dir.dx, ny = e.y + e.dir.dy;
+        if (nx >= 0 && nx < WORLD_W) {
+          const t = getTile(nx, ny);
+          if (t.type === TileType.Air || t.type === TileType.Water) { e.x = nx; e.y = ny; }
+        }
+        if (distToPlayer === 1 && state.invincible <= 0) {
+          state.hp = Math.round((state.hp - 1) * 100) / 100;
+          addFloatingText(state, state.px, state.py, "-1 SLIME!", "#44cc44");
+          if (state.hp <= 0) killPlayer(state);
+        }
+        e.cooldown = 15 + Math.floor(Math.random() * 10);
+      } else if (e.type === "spider") {
+        if (distToPlayer < 12) {
+          const ddx = state.px > e.x ? 1 : state.px < e.x ? -1 : 0;
+          const ddy = state.py > e.y ? 1 : state.py < e.y ? -1 : 0;
+          e.dir = Math.abs(state.px - e.x) > Math.abs(state.py - e.y) ? { dx: ddx, dy: 0 } : { dx: 0, dy: ddy };
+        } else {
+          e.dir = DIRS[Math.floor(Math.random() * 4)];
+        }
+        const nx = e.x + e.dir.dx, ny = e.y + e.dir.dy;
+        if (nx >= 0 && nx < WORLD_W) {
+          const t = getTile(nx, ny);
+          if (t.type === TileType.Air || t.type === TileType.Water) { e.x = nx; e.y = ny; }
+          else if (isMineable(t.type)) { setTile(nx, ny, { type: TileType.Air, revealed: true, hp: 0 }); e.x = nx; e.y = ny; }
+        }
+        if (distToPlayer === 1 && state.invincible <= 0) {
+          state.hp = Math.round((state.hp - 1.5) * 100) / 100;
+          addFloatingText(state, state.px, state.py, "-1.5 SPIDER!", "#884444");
+          state.shakeTimer = 5; state.shakeIntensity = 3;
+          if (state.hp <= 0) killPlayer(state);
+        }
+        e.cooldown = 6 + Math.floor(Math.random() * 6);
+      }
+    }
+  }
+}
+
+// Player attacks an AI entity at tile
+export function attackAI(state: GameState, tx: number, ty: number): boolean {
+  if (state.upgrades.sword <= 0) return false;
+  const dmg = state.upgrades.sword + 1;
+  const target = state.aiEntities.find(e => !e.dead && e.x === tx && e.y === ty);
+  if (!target) return false;
+  target.hp -= dmg;
+  addFloatingText(state, tx, ty, `-${dmg}`, "#ff6666");
+  spawnDigParticles(state, tx, ty, "#ff4444");
+  state.swing = { angle: 0, timer: 12, dirX: tx - state.px, dirY: ty - state.py };
+  if (target.hp <= 0) {
+    target.dead = true;
+    const reward = target.type === "fighter" ? 25 : target.type === "spider" ? 15 : target.type === "slime" ? 10 : 5;
+    state.balance += reward; state.totalEarned += reward;
+    addFloatingText(state, tx, ty, `+${reward} KILL!`, "#ffd700");
+    spawnLootParticles(state, tx, ty, "#ff4444");
+  }
+  return true;
 }
 
 export function updateParticles(state: GameState) {
@@ -334,10 +509,11 @@ export function updateParticles(state: GameState) {
     return f.life > 0;
   });
   if (state.swing.timer > 0) state.swing.timer--;
-  // Tick buffs
   if (state.buffs.speed > 0) state.buffs.speed--;
   if (state.buffs.shield > 0) state.buffs.shield--;
   if (state.buffs.magnet > 0) state.buffs.magnet--;
+  if (state.shakeTimer > 0) state.shakeTimer--;
+  if (state.invincible > 0) state.invincible--;
 }
 
 export function spawnAmbientParticles(state: GameState) {
@@ -493,6 +669,16 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
   const targetCamY = state.py * TILE + TILE / 2 - H / 2;
   state.camX += (targetCamX - state.camX) * 0.12;
   state.camY += (targetCamY - state.camY) * 0.12;
+
+  // Screen shake offset
+  let shakeX = 0, shakeY = 0;
+  if (state.shakeTimer > 0) {
+    shakeX = (Math.random() - 0.5) * state.shakeIntensity * 2;
+    shakeY = (Math.random() - 0.5) * state.shakeIntensity * 2;
+  }
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
 
   // Background
   ctx.fillStyle = getLayerBg(state.py);
@@ -690,6 +876,78 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
 
   ctx.restore();
 
+  // Invincibility flash
+  if (state.invincible > 0 && Math.floor(state.invincible / 6) % 2 === 0) {
+    ctx.fillStyle = "rgba(100,180,255,0.3)";
+    ctx.fillRect(playerSX, playerSY, TILE, TILE);
+  }
+
+  // Render AI entities
+  for (const e of state.aiEntities) {
+    if (e.dead) continue;
+    const ex = Math.floor(e.x * TILE - state.camX);
+    const ey = Math.floor(e.y * TILE - state.camY);
+    if (ex < -TILE * 2 || ex > W + TILE || ey < -TILE * 2 || ey > H + TILE) continue;
+    const dist = Math.sqrt((e.x - state.px) ** 2 + (e.y - state.py) ** 2);
+    if (dist > state.lightRadius + 2) continue;
+    const alpha = Math.max(0.3, 1 - dist / (state.lightRadius + 2));
+    ctx.globalAlpha = alpha;
+
+    if (e.type === "miner") {
+      ctx.fillStyle = "#e8c4a0"; ctx.fillRect(ex + 6, ey + 2, 12, 20);
+      ctx.fillStyle = "#aa8844"; ctx.fillRect(ex + 4, ey + 1, 16, 8);
+      ctx.fillStyle = "#ffcc44"; ctx.fillRect(ex + 9, ey + 2, 6, 4);
+    } else if (e.type === "fighter") {
+      ctx.fillStyle = "#cc4444"; ctx.fillRect(ex + 6, ey + 2, 12, 20);
+      ctx.fillStyle = "#882222"; ctx.fillRect(ex + 4, ey + 1, 16, 8);
+      // Sword
+      ctx.strokeStyle = e.swordTier >= 3 ? "#b9f2ff" : e.swordTier >= 2 ? "#aaa" : "#8B7355";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ex + 20, ey + 4); ctx.lineTo(ex + 26, ey + 16); ctx.stroke();
+    } else if (e.type === "bat") {
+      ctx.fillStyle = "#6644aa";
+      ctx.beginPath(); ctx.arc(ex + TILE / 2, ey + TILE / 2, 6, 0, Math.PI * 2); ctx.fill();
+      // Wings
+      const wing = Math.sin(state.gameTime * 0.3) * 4;
+      ctx.fillRect(ex + 2, ey + 8 + wing, 6, 3);
+      ctx.fillRect(ex + 16, ey + 8 - wing, 6, 3);
+    } else if (e.type === "slime") {
+      ctx.fillStyle = "#44cc44";
+      const bounce = Math.abs(Math.sin(state.gameTime * 0.05 + e.x)) * 3;
+      ctx.beginPath();
+      ctx.ellipse(ex + TILE / 2, ey + TILE - 4 - bounce, 10, 8 + bounce, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Eyes
+      ctx.fillStyle = "#fff"; ctx.fillRect(ex + 8, ey + 10 - bounce, 3, 3); ctx.fillRect(ex + 14, ey + 10 - bounce, 3, 3);
+    } else if (e.type === "spider") {
+      ctx.fillStyle = "#884444";
+      ctx.beginPath(); ctx.arc(ex + TILE / 2, ey + TILE / 2, 7, 0, Math.PI * 2); ctx.fill();
+      // Legs
+      ctx.strokeStyle = "#663333"; ctx.lineWidth = 1;
+      for (let l = 0; l < 4; l++) {
+        const lx = ex + 6 + l * 4, ly = ey + TILE / 2;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - 4, ly + 8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 4, ly + 8); ctx.stroke();
+      }
+      ctx.fillStyle = "#ff0000"; ctx.fillRect(ex + 9, ey + 9, 2, 2); ctx.fillRect(ex + 14, ey + 9, 2, 2);
+    }
+
+    // Name label
+    ctx.font = "bold 8px monospace";
+    ctx.fillStyle = e.type === "fighter" ? "#ff6666" : e.type === "miner" ? "#88bbff" : "#aaa";
+    ctx.textAlign = "center";
+    ctx.fillText(e.name, ex + TILE / 2, ey - 10);
+
+    // HP bar
+    if (e.hp < e.maxHp) {
+      const hpPct = e.hp / e.maxHp;
+      ctx.fillStyle = "#1a1a2e"; ctx.fillRect(ex + 2, ey - 6, TILE - 4, 3);
+      ctx.fillStyle = hpPct > 0.5 ? "#50c878" : "#ff4444";
+      ctx.fillRect(ex + 2, ey - 6, (TILE - 4) * hpPct, 3);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Particles
   for (const p of state.particles) {
     ctx.fillStyle = p.color;
@@ -707,5 +965,14 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
     ctx.fillText(f.text, f.x - state.camX, f.y - state.camY);
   }
   ctx.globalAlpha = 1;
+
+  // Depth fog overlay
+  if (state.py > 50) {
+    const fogAlpha = Math.min(0.35, (state.py - 50) / 600);
+    ctx.fillStyle = `rgba(0,0,0,${fogAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  ctx.restore(); // end shake transform
   state.gameTime++;
 }
