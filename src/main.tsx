@@ -8,7 +8,10 @@ document.body.style.margin = "0";
 document.body.style.overflow = "hidden";
 document.body.style.background = "#000";
 
-const solanaConnectors = toSolanaWalletConnectors();
+const solanaConnectors = toSolanaWalletConnectors({
+  shouldAutoConnect: true,
+  walletList: ["phantom"],
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
