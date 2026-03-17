@@ -7,9 +7,10 @@ import type { ClientMsg, ServerMsg, PlayerState } from "./src/engine/protocol.js
 const app = express();
 const PORT = parseInt(process.env.PORT || "3333");
 
-// Serve static build
-app.use(express.static(path.join(import.meta.dirname, "dist")));
-app.get("/{*splat}", (_req, res) => res.sendFile(path.join(import.meta.dirname, "dist/index.html")));
+// Serve static build — server.js lives inside dist/
+const staticDir = import.meta.dirname;
+app.use(express.static(staticDir));
+app.get("/{*splat}", (_req, res) => res.sendFile(path.join(staticDir, "index.html")));
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
