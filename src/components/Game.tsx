@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createGameState, render, tryMove, tryDig, updateParticles, spawnAmbientParticles, updateAI, attackAI, smartDrop, buyUpgrade, UPGRADE_DEFS, type GameState, type InventoryItem, type Buffs, type Upgrades } from "../engine/game";
 import { revealAround, TILE, getTile, TileType } from "../engine/world";
+import { preloadAudio, startAmbient } from "../engine/audio";
 import { useMultiplayer } from "../hooks/useMultiplayer";
 import type { PlayerState } from "../engine/protocol";
 
@@ -152,6 +153,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   useEffect(() => {
     const s = stateRef.current;
     revealAround(s.px, s.py, s.lightRadius);
+    preloadAudio();
   }, []);
 
   useEffect(() => {
@@ -543,7 +545,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
               </div>
             </div>
             <button
-              onClick={() => setShowHelp(false)}
+              onClick={() => { setShowHelp(false); startAmbient(); }}
               style={{
                 marginTop: 24, padding: "12px 36px", background: "#c8a84e", color: "#0d0d18",
                 border: "none", borderRadius: 8, fontSize: 16, fontWeight: 700, fontFamily: "monospace",

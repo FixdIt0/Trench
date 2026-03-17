@@ -1,5 +1,6 @@
 import { TILE, TileType, getTile, getTileColor, isMineable, isLoot, getLootDrop, setTile, revealAround, getLayerBg, WORLD_W, type LootDrop } from "./world";
 import { fractalNoise } from "./noise";
+import { play, playRandom } from "./audio";
 
 export interface Particle {
   x: number; y: number; vx: number; vy: number;
@@ -215,6 +216,7 @@ export function addFloatingText(state: GameState, wx: number, wy: number, text: 
 }
 
 export function collectLoot(state: GameState, drop: LootDrop) {
+  play("collect");
   const existing = state.inventory.get(drop.name);
   if (existing) existing.count++;
   else state.inventory.set(drop.name, { name: drop.name, count: 1, color: drop.color, rarity: drop.rarity, value: drop.value });
@@ -236,6 +238,7 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   if (tile.type === TileType.Lava && state.buffs.shield <= 0) {
     state.hp = Math.round((state.hp - 2) * 100) / 100;
     addFloatingText(state, nx, ny, "-2 HP LAVA!", "#ff4500");
+    play("lava");
     if (state.hp <= 0) { killPlayer(state); return false; }
   }
 
@@ -243,6 +246,7 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   if (tile.type === TileType.SpikeTrap) {
     state.hp = Math.round((state.hp - 1.5) * 100) / 100;
     addFloatingText(state, nx, ny, "-1.5 SPIKE!", "#8a8a8a");
+    play("damage");
     state.shakeTimer = 8; state.shakeIntensity = 3;
     if (state.hp <= 0) { killPlayer(state); return false; }
   }
@@ -251,22 +255,27 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   if (tile.type === TileType.Mushroom) {
     addFloatingText(state, nx, ny, "+Light", "#8b5e83");
     spawnLootParticles(state, nx, ny, "#8b5e83");
+    play("powerup");
     state.lightRadius = Math.min(12, state.lightRadius + 1.5);
   } else if (tile.type === TileType.Dynamite) {
     addFloatingText(state, nx, ny, "BOOM!", "#ff3333");
+    play("explode");
     state.shakeTimer = 15; state.shakeIntensity = 8;
     blastRadius(state, nx, ny, 3);
   } else if (tile.type === TileType.SpeedPotion) {
     addFloatingText(state, nx, ny, "2x Dig Speed!", "#33ffaa");
     spawnLootParticles(state, nx, ny, "#33ffaa");
+    play("powerup");
     state.buffs.speed = Math.min(600, state.buffs.speed + 300);
   } else if (tile.type === TileType.Shield) {
     addFloatingText(state, nx, ny, "Lava Shield!", "#4488ff");
     spawnLootParticles(state, nx, ny, "#4488ff");
+    play("powerup");
     state.buffs.shield = Math.min(600, state.buffs.shield + 300);
   } else if (tile.type === TileType.Magnet) {
     addFloatingText(state, nx, ny, "Ore Magnet!", "#ff8800");
     spawnLootParticles(state, nx, ny, "#ff8800");
+    play("powerup");
     state.buffs.magnet = Math.min(600, state.buffs.magnet + 300);
     revealOresNearby(state, nx, ny, 8);
   }
@@ -277,6 +286,7 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   state.px = nx; state.py = ny;
   state.lastDir = dy;
   state.pathHistory.add(`${nx},${ny}`);
+  playRandom("step1", "step2");
   // Trail particle
   state.trail.push({
     x: nx * TILE + TILE / 2, y: ny * TILE + TILE / 2,
@@ -362,10 +372,13 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
   // Trigger swing animation
   state.swing = { angle: 0, timer: 12, dirX: dx, dirY: dy };
   spawnDigParticles(state, tx, ty, getTileColor(tile.type));
+  playRandom("dig", "dig2");
 
   if (state.digging.progress >= tile.hp) {
     // Mined!
+    play("break");
     if (tile.type === TileType.Chest) {
+      play("chest");
       // Random chest loot
       const drop = rollChestLoot();
       collectLoot(state, drop);
@@ -411,6 +424,7 @@ export function smartDrop(state: GameState): boolean {
 
 // Death: lose 20% balance, respawn with invincibility
 export function killPlayer(state: GameState) {
+  play("death");
   const lost = Math.floor(state.balance * 0.2);
   state.balance -= lost;
   if (lost > 0) addFloatingText(state, state.px, state.py, `-${lost} balance!`, "#ff4444");
@@ -466,6 +480,7 @@ export function updateAI(state: GameState) {
         const dmg = e.swordTier;
         state.hp = Math.round((state.hp - dmg) * 100) / 100;
         addFloatingText(state, state.px, state.py, `-${dmg} HP`, "#ff4444");
+        play("damage");
         state.shakeTimer = 6; state.shakeIntensity = 4;
         if (state.hp <= 0) killPlayer(state);
         e.cooldown = 30;
@@ -490,6 +505,7 @@ export function updateAI(state: GameState) {
         if (distToPlayer === 1 && state.invincible <= 0) {
           state.hp = Math.round((state.hp - 0.5) * 100) / 100;
           addFloatingText(state, state.px, state.py, "-0.5 BAT!", "#884488");
+          play("bat");
           if (state.hp <= 0) killPlayer(state);
         }
         e.cooldown = 4 + Math.floor(Math.random() * 4);
@@ -509,6 +525,7 @@ export function updateAI(state: GameState) {
         if (distToPlayer === 1 && state.invincible <= 0) {
           state.hp = Math.round((state.hp - 1) * 100) / 100;
           addFloatingText(state, state.px, state.py, "-1 SLIME!", "#44cc44");
+          play("slime");
           if (state.hp <= 0) killPlayer(state);
         }
         e.cooldown = 15 + Math.floor(Math.random() * 10);
@@ -529,6 +546,7 @@ export function updateAI(state: GameState) {
         if (distToPlayer === 1 && state.invincible <= 0) {
           state.hp = Math.round((state.hp - 1.5) * 100) / 100;
           addFloatingText(state, state.px, state.py, "-1.5 SPIDER!", "#884444");
+          play("spider");
           state.shakeTimer = 5; state.shakeIntensity = 3;
           if (state.hp <= 0) killPlayer(state);
         }
@@ -541,6 +559,7 @@ export function updateAI(state: GameState) {
 // Player attacks an AI entity at tile
 export function attackAI(state: GameState, tx: number, ty: number): boolean {
   if (state.upgrades.sword <= 0) return false;
+  play("sword");
   const dmg = state.upgrades.sword + 1;
   const target = state.aiEntities.find(e => !e.dead && e.x === tx && e.y === ty);
   if (!target) return false;

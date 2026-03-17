@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { runTunnelAnimation } from "./TunnelAnim";
+import { preloadAudio, playMinecart } from "../engine/audio";
 
 const PARTICLES_COUNT = 60;
 
@@ -35,7 +36,7 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
     runTunnelAnimation(c, onEnter);
   }, [entering, onEnter]);
 
-  const handleEnter = () => setEntering(true);
+  const handleEnter = () => { preloadAudio(); playMinecart(); setEntering(true); };
 
   // Flickering lantern cursor
   const lanternRef = useRef<HTMLCanvasElement>(null);
