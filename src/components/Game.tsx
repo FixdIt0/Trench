@@ -428,7 +428,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
       <style>{`@keyframes shopPulse { 0%,100% { background: rgba(200,168,78,0.15); box-shadow: none; } 50% { background: rgba(200,168,78,0.35); box-shadow: 0 0 12px rgba(200,168,78,0.4); } }`}</style>
 
       {/* Volume slider */}
-      <div style={{ position: "absolute", bottom: 16, right: 16, display: "flex", alignItems: "center", gap: 6, fontFamily: "monospace", fontSize: 10, color: "#555" }}>
+      <div style={{ position: "absolute", top: 16, right: 16, display: "flex", alignItems: "center", gap: 6, fontFamily: "monospace", fontSize: 10, color: "#555", zIndex: 5 }}>
         <span>🔈</span>
         <input type="range" min="0" max="100" value={volume * 100}
           onChange={e => { const v = parseInt(e.target.value) / 100; setVolume(v); setMasterVolume(v); }}
