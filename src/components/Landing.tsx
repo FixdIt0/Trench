@@ -166,6 +166,31 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
           </p>
         </div>
 
+        {/* Features grid */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12,
+          maxWidth: 560, width: "100%", marginBottom: 40,
+        }}>
+          {[
+            { icon: "⛏️", title: "Upgrade Tools", desc: "6 pickaxe tiers. Mine faster, dig deeper." },
+            { icon: "🗡️", title: "Sword Combat", desc: "Attack miners. Steal their glory." },
+            { icon: "🛡️", title: "Find Shields", desc: "Walk through lava. Survive the depths." },
+            { icon: "💎", title: "Rare Ores", desc: "Diamond, Ruby, Emerald. Sell for upgrades." },
+            { icon: "💣", title: "Dynamite", desc: "Blast 3-tile radius. Clear entire caves." },
+            { icon: "🕷️", title: "Fight Mobs", desc: "Bats, slimes, spiders. They hunt you." },
+          ].map((f, i) => (
+            <div key={i} style={{
+              padding: "16px 12px", textAlign: "center",
+              border: "1px solid rgba(200,168,78,0.08)", borderRadius: 8,
+              background: "rgba(200,168,78,0.02)",
+            }}>
+              <div style={{ fontSize: 24, marginBottom: 6 }}>{f.icon}</div>
+              <div style={{ fontSize: 11, color: "#c8a84e", fontFamily: "monospace", letterSpacing: "0.05em", marginBottom: 4 }}>{f.title}</div>
+              <div style={{ fontSize: 11, color: "#6a5a4a", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{f.desc}</div>
+            </div>
+          ))}
+        </div>
+
         {/* CTA Button */}
         <button
           onClick={handleEnter}
