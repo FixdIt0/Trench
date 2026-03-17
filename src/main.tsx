@@ -10,7 +10,6 @@ document.body.style.background = "#000";
 
 const solanaConnectors = toSolanaWalletConnectors({
   shouldAutoConnect: true,
-  walletList: ["phantom"],
 });
 
 createRoot(document.getElementById("root")!).render(
@@ -20,6 +19,7 @@ createRoot(document.getElementById("root")!).render(
       config={{
         appearance: {
           walletChainType: "solana-only",
+          walletList: ["phantom"],
           theme: "dark",
           accentColor: "#c8a84e",
         },
