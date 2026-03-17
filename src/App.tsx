@@ -1,8 +1,14 @@
+import { useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import Game from "./components/Game";
+import Landing from "./components/Landing";
 
 export default function App() {
   const { ready, authenticated, login, logout, user } = usePrivy();
+  const [entered, setEntered] = useState(false);
+
+  // Landing page — before anything
+  if (!entered) return <Landing onEnter={() => { setEntered(true); login(); }} />;
 
   if (!ready) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#000", color: "#555", fontFamily: "monospace" }}>
@@ -16,7 +22,7 @@ export default function App() {
       height: "100vh", background: "#0a0a12", fontFamily: "monospace", color: "#ccc",
     }}>
       <div style={{ fontSize: 48, fontWeight: 700, color: "#f0e6d3", letterSpacing: 4, marginBottom: 12 }}>TRENCH</div>
-      <div style={{ fontSize: 14, color: "#666", marginBottom: 32 }}>Dig deep. Find treasure. How far can you go?</div>
+      <div style={{ fontSize: 14, color: "#666", marginBottom: 32 }}>Connect your wallet to enter the mine</div>
       <button
         onClick={login}
         style={{
@@ -36,7 +42,6 @@ export default function App() {
   return (
     <>
       <Game walletAddr={walletAddr} />
-      {/* Auth bar */}
       <div style={{
         position: "fixed", bottom: 16, right: 16, display: "flex", gap: 8,
         alignItems: "center", fontFamily: "monospace", fontSize: 12, zIndex: 20,
