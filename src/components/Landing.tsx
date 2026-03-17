@@ -160,8 +160,11 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
             fontFamily: "'Georgia', serif",
           }}>
             Somewhere deep beneath the surface lies a legendary artifact.
-            The first miner to discover it claims the{" "}
-            <span style={{ color: "#c8a84e", fontWeight: 700 }}>entire creator fee prizepool</span>.
+            50% of creator fees fuel{" "}
+            <span style={{ color: "#c8a84e", fontWeight: 700 }}>agent buybacks</span>.
+            The other 50% fills the{" "}
+            <span style={{ color: "#c8a84e", fontWeight: 700 }}>prize pool</span>
+            {" "}— and the first miner to unearth it claims it all.
             No hints. No mercy. Only depth.
           </p>
         </div>
