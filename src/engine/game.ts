@@ -372,7 +372,8 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
   // Trigger swing animation
   state.swing = { angle: 0, timer: 12, dirX: dx, dirY: dy };
   spawnDigParticles(state, tx, ty, getTileColor(tile.type));
-  playRandom("dig", "dig2");
+  // Dirt sound for dirt/moss, stone sound for everything else
+  play(tile.type === TileType.Dirt || tile.type === TileType.Moss ? "dig2" : "dig");
 
   if (state.digging.progress >= tile.hp) {
     // Mined!
