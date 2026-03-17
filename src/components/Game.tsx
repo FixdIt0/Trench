@@ -524,34 +524,6 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10,
           overflow: "hidden",
         }}>
-          {/* Animated background — scrolling underground layers */}
-          <div style={{ position: "absolute", inset: 0, opacity: 0.15, pointerEvents: "none" }}>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} style={{
-                position: "absolute", left: 0, right: 0,
-                top: `${12 + i * 11}%`, height: "12%",
-                background: ["#5c3d2e", "#6b6b7b", "#4a4a5e", "#7b4fbf", "#1a1a2e", "#3d3d50", "#5c3d2e", "#4a4a5e"][i],
-                animation: `scrollBg ${8 + i * 2}s linear infinite`,
-                animationDelay: `${i * 0.5}s`,
-              }}>
-                {/* Glowing ore dots */}
-                {Array.from({ length: 6 }).map((_, j) => (
-                  <div key={j} style={{
-                    position: "absolute",
-                    left: `${10 + j * 15 + i * 3}%`, top: "30%",
-                    width: 6, height: 6, borderRadius: "50%",
-                    background: ["#ffd700", "#e0115f", "#b9f2ff", "#50c878", "#9966cc", "#ff3333"][j],
-                    boxShadow: `0 0 8px ${["#ffd700", "#e0115f", "#b9f2ff", "#50c878", "#9966cc", "#ff3333"][j]}`,
-                    animation: `pulse ${1.5 + j * 0.3}s ease-in-out infinite`,
-                  }} />
-                ))}
-              </div>
-            ))}
-            <style>{`
-              @keyframes scrollBg { 0% { transform: translateX(-10%); } 100% { transform: translateX(10%); } }
-              @keyframes pulse { 0%,100% { opacity: 0.4; transform: scale(1); } 50% { opacity: 1; transform: scale(1.5); } }
-            `}</style>
-          </div>
           <div style={{
             background: "#0d0d18", border: "1px solid #2a2a3e", borderRadius: 16,
             padding: "36px 40px", maxWidth: 560, fontFamily: "monospace", color: "#ccc", textAlign: "center",
