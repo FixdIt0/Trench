@@ -36,6 +36,7 @@ export interface GameState {
   baseLightRadius: number;
   digging: { x: number; y: number; progress: number; maxHp: number } | null;
   swing: { angle: number; timer: number; dirX: number; dirY: number };
+  movedUpThisTick: boolean;
   buffs: Buffs;
   upgrades: Upgrades;
   gameTime: number;
@@ -105,6 +106,7 @@ export function createGameState(): GameState {
     hp: 10, maxHp: 10, falling: false, fallCount: 0,
     digPower: 1, lightRadius: 6, baseLightRadius: 6, digging: null,
     swing: { angle: 0, timer: 0, dirX: 1, dirY: 1 },
+    movedUpThisTick: false,
     buffs: { speed: 0, shield: 0, magnet: 0 },
     upgrades: { pickaxe: 0, sword: 0, lamp: 0, armor: 0 },
     gameTime: 0, ambientParticles: [],
@@ -183,6 +185,7 @@ export function tryMove(state: GameState, dx: number, dy: number): boolean {
   }
 
   state.px = nx; state.py = ny;
+  if (dy < 0) state.movedUpThisTick = true;
   if (ny > state.maxDepth) state.maxDepth = ny;
   revealAround(nx, ny, state.lightRadius);
   return true;
@@ -288,6 +291,7 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
 
 // Tick-based gravity: call each frame, moves 1 tile per call
 export function applyGravity(state: GameState): boolean {
+  if (state.movedUpThisTick) { state.movedUpThisTick = false; return false; }
   const below = getTile(state.px, state.py + 1);
   if (below.type === TileType.Air || below.type === TileType.Water) {
     state.py++;
