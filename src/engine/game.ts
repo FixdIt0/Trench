@@ -377,7 +377,6 @@ export function tryDig(state: GameState, dx: number, dy: number): boolean {
 
   if (state.digging.progress >= tile.hp) {
     // Mined!
-    play("break");
     if (tile.type === TileType.Chest) {
       play("chest");
       // Random chest loot
@@ -832,7 +831,12 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
       const sy = Math.floor(ty * TILE - state.camY);
 
       if (!tile.revealed) {
-        // Powerups and ores glow through darkness — visible from far away
+        // Always reveal tiles within 2 tiles of player
+        const dist = Math.sqrt((tx - state.px) ** 2 + (ty - state.py) ** 2);
+        if (dist <= 2) {
+          tile.revealed = true;
+        } else {
+          // Powerups and ores glow through darkness — visible from far away
         if (tile.glow && tile.glow > 0) {
           const dist = Math.sqrt((tx - state.px) ** 2 + (ty - state.py) ** 2);
           const isPowerup = tile.type === TileType.Dynamite || tile.type === TileType.SpeedPotion || tile.type === TileType.Shield || tile.type === TileType.Magnet || tile.type === TileType.Mushroom;
@@ -855,6 +859,7 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
           }
         }
         continue;
+        }
       }
 
       if (tile.type === TileType.Air) {
@@ -863,7 +868,7 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, W: numbe
 
       // Distance-based lighting
       const dist = Math.sqrt((tx - state.px) ** 2 + (ty - state.py) ** 2);
-      const lightFalloff = Math.max(0.03, 1 - (dist * dist) / ((state.lightRadius + 1) * (state.lightRadius + 1)));
+      const lightFalloff = Math.max(0.12, 1 - (dist * dist) / ((state.lightRadius + 1) * (state.lightRadius + 1)));
 
       ctx.fillStyle = getTileColor(tile.type);
       ctx.globalAlpha = lightFalloff;
