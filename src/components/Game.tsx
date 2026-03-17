@@ -180,8 +180,8 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         applyGravity(s);
       }
 
-      // Input only when not falling, ~4/sec
-      if (!s.falling && tickRef.current % 15 === 0) {
+      // Movement always allowed, digging only when not falling
+      if (tickRef.current % 15 === 0) {
         let dx = 0, dy = 0;
         if (keys.has("a") || keys.has("arrowleft")) dx = -1;
         else if (keys.has("d") || keys.has("arrowright")) dx = 1;
@@ -189,14 +189,13 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         else if (keys.has("w") || keys.has("arrowup")) dy = -1;
 
         if (dx !== 0 || dy !== 0) {
-          if (!tryMove(s, dx, dy)) tryDig(s, dx, dy);
+          if (!tryMove(s, dx, dy) && !s.falling) tryDig(s, dx, dy);
         }
 
         if (keys.has(" ")) {
-          if (!tryMove(s, 0, 1)) tryDig(s, 0, 1);
+          if (!tryMove(s, 0, 1) && !s.falling) tryDig(s, 0, 1);
         }
 
-        // Light decays toward base
         if (s.lightRadius > s.baseLightRadius) s.lightRadius = Math.max(s.baseLightRadius, s.lightRadius - 0.01);
       }
 
