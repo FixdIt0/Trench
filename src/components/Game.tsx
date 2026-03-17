@@ -9,7 +9,7 @@ const RARITY_COLORS: Record<string, string> = {
 };
 
 const SLIDES = [
-  { src: "/Start_game.mp4", label: "Dig & Explore", zoom: 0.7, startAt: 2 },
+  { src: "/Start_game.mp4", label: "Dig & Explore", zoom: 0.5, startAt: 2 },
   { src: "/LIGHT.mp4", label: "Find Powerups", zoom: 0.7, startAt: 2 },
   { src: "/BOOM.mp4", label: "Blow Stuff Up", zoom: 0.7, startAt: 0 },
 ];
