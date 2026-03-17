@@ -131,6 +131,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
   const [showLB, setShowLB] = useState(false);
   const [lbSort, setLbSort] = useState<"points" | "kills">("points");
   const [hudAnim, setHudAnim] = useState(0);
+  const [activeSlot, setActiveSlot] = useState(0);
   const tickRef = useRef(0);
   const { otherPlayers, allPlayers, killFeed, sendMove, sendAttack } = useMultiplayer(walletAddr);
   const otherPlayersRef = useRef<PlayerState[]>([]);
@@ -160,6 +161,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Tab") { e.preventDefault(); setShowInv(v => !v); setShowShop(false); return; }
       if (e.key === "e" || e.key === "E") { setShowShop(v => !v); setShowInv(false); return; }
+      if (e.key >= "1" && e.key <= "4") { setActiveSlot(parseInt(e.key) - 1); return; }
       keysRef.current.add(e.key.toLowerCase());
     };
     const offKey = (e: KeyboardEvent) => keysRef.current.delete(e.key.toLowerCase());
@@ -413,6 +415,44 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
         ⛏️ SHOP
       </button>
 
+      {/* Hotbar */}
+      <div style={{
+        position: "absolute", bottom: 48, left: "50%", transform: "translateX(-50%)",
+        display: "flex", gap: 4, fontFamily: "monospace", zIndex: 5,
+      }}>
+        {(["pickaxe", "sword", "lamp", "armor"] as (keyof typeof UPGRADE_DEFS)[]).map((key, i) => {
+          const tier = upgrades[key];
+          const def = UPGRADE_DEFS[key];
+          const current = def.tiers[tier];
+          const owned = key === "pickaxe" || tier > 0;
+          if (!owned) return (
+            <div key={key} style={{
+              width: 52, height: 52, borderRadius: 6,
+              background: "rgba(20,20,30,0.6)", border: "1px solid #222",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              opacity: 0.3,
+            }}>
+              <div style={{ fontSize: 18 }}>{current.icon}</div>
+              <div style={{ fontSize: 8, color: "#444" }}>{i + 1}</div>
+            </div>
+          );
+          return (
+            <div key={key} onClick={() => setActiveSlot(i)} style={{
+              width: 52, height: 52, borderRadius: 6, cursor: "pointer",
+              background: activeSlot === i ? "rgba(200,168,78,0.15)" : "rgba(20,20,30,0.7)",
+              border: activeSlot === i ? "2px solid #c8a84e" : "1px solid #333",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              transition: "border 0.15s, background 0.15s",
+            }}>
+              <div style={{ fontSize: 20 }}>{current.icon}</div>
+              <div style={{ fontSize: 8, color: activeSlot === i ? "#c8a84e" : "#666", marginTop: 1 }}>
+                {i + 1} {tier > 0 ? `T${tier + 1}` : ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Minimap */}
       <canvas
         ref={minimapRef}
@@ -426,7 +466,7 @@ export default function Game({ walletAddr }: { walletAddr?: string }) {
 
       {/* Controls hint */}
       <div style={{ position: "absolute", bottom: 16, left: 150, color: "#555", fontFamily: "monospace", fontSize: 12, pointerEvents: "none" }}>
-        WASD to move & dig · Space to dig down · Click adjacent tiles · Tab inventory · E shop
+        WASD move · Space dig down · Click tiles · 1-4 hotbar · Tab inventory · E shop
       </div>
 
       {/* Mini inventory bar */}
