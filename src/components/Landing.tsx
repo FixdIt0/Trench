@@ -218,7 +218,7 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
           fontFamily: "monospace", fontSize: 12,
         }}>
           <span
-            onClick={() => { navigator.clipboard.writeText("TBA"); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+            onClick={() => { navigator.clipboard.writeText("F8KqRqh1SWRDPcvDnTWvjFS87bEjzvf4C1e94ofKpump"); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
             style={{
               color: "#6a5a3a", cursor: "pointer", padding: "6px 14px",
               border: "1px solid rgba(200,168,78,0.15)", borderRadius: 6,
@@ -228,9 +228,9 @@ export default function Landing({ onEnter }: { onEnter: () => void }) {
             onMouseEnter={e => e.currentTarget.style.color = "#c8a84e"}
             onMouseLeave={e => e.currentTarget.style.color = "#6a5a3a"}
           >
-            CA: TBA {copied ? "✓ Copied" : "📋"}
+            CA: F8Kq...pump {copied ? "✓ Copied" : "📋"}
           </span>
-          <a href="https://x.com" target="_blank" rel="noopener noreferrer" style={{
+          <a href="https://x.com/TrenchTreasures" target="_blank" rel="noopener noreferrer" style={{
             color: "#6a5a3a", textDecoration: "none", padding: "6px 14px",
             border: "1px solid rgba(200,168,78,0.15)", borderRadius: 6,
             background: "rgba(200,168,78,0.03)",
